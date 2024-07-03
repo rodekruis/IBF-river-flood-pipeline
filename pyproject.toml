@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "floodpipeline"
+version = "0.0.1"
+authors = [
+  "Jacopo Margutti <jmargutti@redcross.nl>"
+]
+description = "IBF Pipeline for Floods"
+readme = "README.md"
+repository = "https://github.com/rodekruis/ibf-pipeline-flood"
+packages = [{include = "floodpipeline"}]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.12"
+xarray = "*"
+rasterio = "*"
+rasterstats = "*"
+geopandas = "*"
+pandas = "*"
+python-dotenv = "*"
+azure-identity = "*"
+azure-keyvault-secrets = "*"
+azure-storage-blob = "*"
+azure-cosmos = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
