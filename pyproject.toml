@@ -2,6 +2,8 @@
 name = "floodpipeline"
 version = "0.0.1"
 authors = [
+  "Aklilu Teklesadik <ateklesadik@redcross.nl>",
+  "Phuoc Phùng <pphung@redcross.nl>",
   "Jacopo Margutti <jmargutti@redcross.nl>"
 ]
 description = "IBF Pipeline for Floods"
@@ -11,16 +13,21 @@ packages = [{include = "floodpipeline"}]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.12"
-xarray = "*"
-rasterio = "*"
-rasterstats = "*"
-geopandas = "*"
-pandas = "*"
-python-dotenv = "*"
 azure-identity = "*"
 azure-keyvault-secrets = "*"
 azure-storage-blob = "*"
 azure-cosmos = "*"
+GeoAlchemy2 = "*"
+geopandas = "*"
+netCDF4 = "*"
+pandas = "*"
+pycountry = "*"
+python-dotenv = "*"
+rasterio = "*"
+rasterstats = "*"
+SQLAlchemy = "*"
+tqdm = "*"
+xarray = "*"
 
 [build-system]
 requires = ["poetry-core"]

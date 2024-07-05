@@ -5,9 +5,9 @@
 *.sublime-workspace
 
 # Configuration, secrets, etc:
-credentials/*
-.env
-env
+credentials/.env
+!credentials/.env-example
+*.env
 
 # Generated files
 dist
