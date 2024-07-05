@@ -1,1 +1,9 @@
 # configuration file for ibf flood pipeline
+
+<country1>:
+  alert-thresholds:
+  min-trigger-probability:
+
+<country2>:
+  alert-thresholds:
+  min-trigger-probability:
