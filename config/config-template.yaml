@@ -9,10 +9,32 @@ databases:
   postgresql_port: 5432
   postgresql_database: global510
 
-<country1>:
-  alert-thresholds:
-  min-trigger-probability:
+countries:
+  - UGA:
+    admin-levels:
+      - 1
+      - 2
+      - 3
+    alert-thresholds:
+    min-trigger-probability:
 
-<country2>:
-  alert-thresholds:
-  min-trigger-probability:
+#  KEN:
+#    admin-levels:
+#      - 1
+#    alert-thresholds:
+#    min-trigger-probability:
+#  ETH:
+#    admin-levels:
+#      - 1
+#    alert-thresholds:
+#    min-trigger-probability:
+#  SSD:
+#    admin-levels:
+#      - 1
+#    alert-thresholds:
+#    min-trigger-probability:
+#  ZMB:
+#    admin-levels:
+#      - 1
+#    alert-thresholds:
+#    min-trigger-probability:

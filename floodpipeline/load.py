@@ -40,6 +40,15 @@ def get_cosmos_query(start_date, end_date, country, adm_level, pcode, lead_time)
     return query
 
 
+def get_data_unit_id(data_unit: BaseDataUnit, dataset: BaseDataSet):
+    """Get data unit ID"""
+    if hasattr(data_unit, "lead_time"):
+        id_ = f"{data_unit.pcode}_{dataset.timestamp.strftime('%Y-%m-%dT%H:%M:%S')}_{data_unit.lead_time}"
+    else:
+        id_ = f"{data_unit.pcode}_{dataset.timestamp.strftime('%Y-%m-%dT%H:%M:%S')}"
+    return id_
+
+
 class Load:
     """Download/upload data from/to a data storage"""
 
@@ -78,7 +87,7 @@ class Load:
         )
         gdf = gpd.GeoDataFrame()
         try:
-            sql = f"SELECT geometry, adm1_pcode FROM admin_boundaries_pcoded.{country.lower()}_adm{adm_level}"
+            sql = f"SELECT geometry, adm{adm_level}_pcode FROM admin_boundaries_pcoded.{country.lower()}_adm{adm_level}"
             gdf = gpd.GeoDataFrame.from_postgis(sql, engine, geom_col="geometry")
         except ProgrammingError:
             logging.warning(
@@ -108,12 +117,9 @@ class Load:
         cosmos_container_client = cosmos_db.get_container_client(data_type)
         for data_unit in dataset.data_units:
             record = vars(data_unit)
-            record["timestamp"] = dataset.timestamp
+            record["timestamp"] = dataset.timestamp.strftime("%Y-%m-%dT%H:%M:%S")
             record["country"] = dataset.country
-            record["id"] = (
-                f"{dataset.pcode}_{dataset.timestamp.strftime('%Y-%m-%dT%H:%M:%S')}_"
-                f"{data_unit.lead_time}"
-            )
+            record["id"] = get_data_unit_id(data_unit, dataset)
             cosmos_container_client.upsert_item(body=record)
 
     def get_pipeline_data(

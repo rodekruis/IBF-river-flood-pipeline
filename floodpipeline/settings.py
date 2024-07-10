@@ -1,6 +1,7 @@
 import os
 import yaml
 from urllib.parse import urlparse
+from typing import List
 
 
 def is_url(x):
@@ -24,16 +25,24 @@ class Settings:
         with open(self.setting_path, "r") as file:
             self.settings = yaml.load(file, Loader=yaml.FullLoader)
 
-    def get_setting(self, setting):
+    def get_setting(self, setting: str):
         setting_value = None
-        for key in self.settings.keys():
-            if setting in self.settings[key].keys():
-                setting_value = self.settings[key][setting]
+        if setting in self.settings.keys():
+            setting_value = self.settings[setting]
+        else:
+            for key in self.settings.keys():
+                if type(self.settings[key]) == dict:
+                    if setting in self.settings[key].keys():
+                        setting_value = self.settings[key][setting]
+                elif type(self.settings[key]) == list:
+                    for i in range(len(self.settings[key])):
+                        if setting in self.settings[key][i].keys():
+                            setting_value = self.settings[key][i][setting]
         if not setting_value:
             raise ValueError(f"Setting {setting} not found in {self.setting_path}")
         return setting_value
 
-    def check_settings(self, settings):
+    def check_settings(self, settings: List[str]):
         missing_settings = []
         for setting in settings:
             try:
