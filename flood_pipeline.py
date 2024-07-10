@@ -24,15 +24,15 @@ logging.getLogger("requests_oauthlib").setLevel(logging.WARNING)
 @click.command()
 @click.option("--country", type=str, required=True, help="Country name")
 def run_sml_pipeline(country):
-    if os.path.exists('config/config.yaml'):
-        with open('config/config.yaml', 'r') as f:
+    if os.path.exists("config/config.yaml"):
+        with open("config/config.yaml", "r") as f:
             settings = yaml.safe_load(f)
     else:
         settings = yaml.safe_load(os.environ["CONFIG"])
 
     start_date = datetime.today() - timedelta(days=14)
     end_date = datetime.today()
-    country_code = settings[country]['country-code']
+    country_code = settings[country]["country-code"]
 
     # load secrets from .env
     pipe = Pipeline(secrets=Secrets("env"))
@@ -42,17 +42,19 @@ def run_sml_pipeline(country):
     messages = pipe.extract.get_data(
         start_date=start_date,
         country=country_code,
-        channels=settings[country]['channels-to-track'],
-        store_temp=False
+        channels=settings[country]["channels-to-track"],
+        store_temp=False,
     )
     logging.info(f"found {len(messages)} messages!")
 
-    pipe.transform.set_translator(model="Microsoft",
-                                  from_lang="",  # empty string means auto-detect language
-                                  to_lang="en")
-    pipe.transform.set_classifier(type="setfit",
-                                  model="rodekruis/sml-ukr-message-classifier",
-                                  lang="en")
+    pipe.transform.set_translator(
+        model="Microsoft",
+        from_lang="",  # empty string means auto-detect language
+        to_lang="en",
+    )
+    pipe.transform.set_classifier(
+        type="setfit", model="rodekruis/sml-ukr-message-classifier", lang="en"
+    )
     messages = pipe.transform.process_messages(messages, translate=True, classify=True)
     logging.info(f"processed {len(messages)} messages!")
 
@@ -61,10 +63,10 @@ def run_sml_pipeline(country):
     pipe.load.save_to_argilla(
         messages=messages,
         dataset_name=f"{country_code.lower()}-{start_date.strftime('%Y-%m-%d')}-{end_date.strftime('%Y-%m-%d')}",
-        workspace=country
+        workspace=country,
     )
     logging.info(f"saved {len(messages)} messages!")
-    
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     run_sml_pipeline()

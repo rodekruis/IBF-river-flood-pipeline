@@ -1,5 +1,14 @@
 # configuration file for ibf flood pipeline
 
+floods:
+  glofas_ftp_server: aux.ecmwf.int/fc_netcdf
+  global_flood_maps_url: https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/CEMS-GLOFAS/flood_hazard
+
+databases:
+  postgresql_server: 510-postgresql-flex-server.postgres.database.azure.com
+  postgresql_port: 5432
+  postgresql_database: global510
+
 <country1>:
   alert-thresholds:
   min-trigger-probability:
