@@ -3,6 +3,7 @@
 floods:
   glofas_ftp_server: aux.ecmwf.int/fc_netcdf
   global_flood_maps_url: https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/CEMS-GLOFAS/flood_hazard
+  no_ensemble_members: 1  # number of ensemble members to consider
   minimum_flood_depth: 0.5  # minimum flood depth considered when calculating affected population
 
 auxiliary:

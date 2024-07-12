@@ -195,11 +195,11 @@ class Extract:
             country=self.river_discharge_dataset.country, adm_level=1
         )
         country_bounds = country_gdf.total_bounds
-        nofEns = 1  # number of ensemble members
+        nofEns = self.settings.get_setting(
+            "no_ensemble_members"
+        )  # number of ensemble members
         ntecdf_files = []
         date = datetime.today().strftime("%Y%m%d")
-        # yesterday = datetime.today() - timedelta(days=1)
-        # date = yesterday.strftime("%Y%m%d")
 
         for ensemble in range(0, nofEns):
             # Download netcdf file
