@@ -1,6 +1,5 @@
 import requests
 import os
-import urllib.request
 from datetime import datetime
 import zipfile
 import numpy as np
@@ -74,14 +73,16 @@ def add_flood_maps():
                 flood_map_filepath = f"data/updates/{flood_map_file}"
                 url = f"{settings.get_setting('global_flood_maps_url')}/RP{rp}/{flood_map_file}"
                 if not os.path.exists(flood_map_filepath):
-                    urllib.request.urlretrieve(url, flood_map_filepath)
+                    r = requests.get(url)
+                    with open(flood_map_filepath, "wb") as file:
+                        file.write(r.content)
                 # clip
                 flood_map_clipped_filepath = f"data/updates/{flood_map_file}".replace(
                     ".tif", "_clipped.tif"
                 )
                 if not os.path.exists(flood_map_clipped_filepath):
                     clip, out_meta = clip_raster(
-                        flood_map_filepath, country_gdf.geometry.union_all()
+                        flood_map_filepath, [country_gdf.geometry.union_all()]
                     )
                     with rasterio.open(
                         flood_map_clipped_filepath, "w", **out_meta

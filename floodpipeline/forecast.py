@@ -2,7 +2,7 @@ from floodpipeline.secrets import Secrets
 from floodpipeline.settings import Settings
 from floodpipeline.data import BaseDataSet, FloodForecastDataUnit
 from floodpipeline.load import Load
-import requests
+import time
 from typing import List
 from shapely import Polygon
 import pandas as pd
@@ -12,7 +12,7 @@ import numpy as np
 import rasterio
 from rasterio.merge import merge
 from rasterio.mask import mask
-from rasterio.shapes import shapes
+from rasterio.features import shapes
 
 
 def merge_rasters(raster_filepaths: list) -> tuple:
@@ -60,16 +60,15 @@ class Forecast:
     def __init__(self, settings: Settings = None, secrets: Secrets = None):
         self.secrets = None
         self.settings = None
-        if settings is not None:
-            self.set_settings(settings)
-        if secrets is not None:
-            self.set_secrets(secrets)
+        self.set_settings(settings)
+        self.set_secrets(secrets)
         self.flood_data = BaseDataSet()
-        self.flood_extent_filepath: str = "data/output/flood_extent.tif"
-        self.pop_filepath: str = "data/input/population_density.tif"
-        self.aff_pop_filepath: str = "data/output/affected_population.tif"
-        os.makedirs("data/input", exist_ok=True)
-        os.makedirs("data/output", exist_ok=True)
+        self.load = Load(settings=self.settings, secrets=self.secrets)
+        self.input_data_path: str = "data/input"
+        self.output_data_path: str = "data/output"
+        self.flood_extent_filepath: str = self.output_data_path + "/flood_extent.tif"
+        self.pop_filepath: str = self.input_data_path + "/population_density.tif"
+        self.aff_pop_filepath: str = self.output_data_path + "/affected_population.tif"
 
     def set_settings(self, settings):
         """Set settings"""
@@ -86,10 +85,13 @@ class Forecast:
         self.secrets = secrets
 
     def forecast(
-        self,
-        river_discharges: BaseDataSet,
-        trigger_thresholds: BaseDataSet,
+        self, river_discharges: BaseDataSet, trigger_thresholds: BaseDataSet
     ) -> BaseDataSet:
+        os.makedirs(self.input_data_path, exist_ok=True)
+        os.makedirs(self.output_data_path, exist_ok=True)
+        self.flood_data = BaseDataSet(
+            country=river_discharges.country, adm_levels=river_discharges.adm_levels
+        )
         self.__compute_triggers(river_discharges, trigger_thresholds)
         self.__compute_flood_extent()
         self.__compute_affected_pop()
@@ -109,23 +111,27 @@ class Forecast:
         country = self.flood_data.country
         flood_rasters = {}
         for rp in [10, 20, 50, 75, 100, 200, 500]:
-            flood_raster_filepath = f"data/input/flood_map_{country.upper()}_RP{rp}.tif"
-            Load(settings=self.settings, secrets=self.secrets).get_from_blob(
-                flood_raster_filepath,
-                f"flood/pipeline-input/flood-maps/{country.upper()}/flood_map_{country.upper()}_RP{rp}.tif",
+            flood_raster_filepath = (
+                self.input_data_path + f"/flood_map_{country.upper()}_RP{rp}.tif"
             )
+            if not os.path.exists(flood_raster_filepath):
+                self.load.get_from_blob(
+                    flood_raster_filepath,
+                    f"flood/pipeline-input/flood-maps/{country.upper()}/flood_map_{country.upper()}_RP{rp}.tif",
+                )
             flood_rasters[rp] = flood_raster_filepath
         flood_rasters_admin_div = []
-        for adm_lvl in self.flood_data.admin_levels:
+        for adm_lvl in self.flood_data.adm_levels:
             # get adm boundaries
-            gdf_adm = Load(
-                settings=self.settings, secrets=self.secrets
-            ).get_adm_boundaries(self.flood_data.country, adm_lvl)
+            gdf_adm = self.load.get_adm_boundaries(self.flood_data.country, adm_lvl)
             gdf_adm.index = gdf_adm[f"adm{adm_lvl}_pcode"]
 
             # calculate flood extent for each triggered admin division
             for forecast_data_unit in self.flood_data.data_units:
-                if forecast_data_unit.triggered:
+                if (
+                    forecast_data_unit.adm_level == adm_lvl
+                    and forecast_data_unit.triggered
+                ):
                     adm_bounds = gdf_adm.loc[forecast_data_unit.pcode, "geometry"]
                     rp = forecast_data_unit.return_period
                     # clip flood extent raster with admin division boundaries
@@ -148,13 +154,14 @@ class Forecast:
             self.flood_extent_filepath, "w", **flood_raster_meta
         ) as dest:
             dest.write(flood_raster_data)
+        # delete intermediate files
+        for file in flood_rasters_admin_div:
+            os.remove(file)
 
     def __compute_affected_pop_raster(self):
         """Compute affected population raster given a flood extent"""
         # get population density raster
-        Load(settings=self.settings, secrets=self.secrets).get_population_density(
-            self.pop_filepath
-        )
+        self.load.get_population_density(self.flood_data.country, self.pop_filepath)
         # convert flood extent raster to vector (list of shapes)
         flood_shapes = []
         with rasterio.open(self.flood_extent_filepath) as dataset:
@@ -164,12 +171,7 @@ class Forecast:
             mask = dataset.dataset_mask()
             rasterio_shapes = shapes(image, mask=mask, transform=dataset.transform)
             for geom, val in rasterio_shapes:
-                # Filter out shapes with flood depth below the minimum threshold
                 if val >= self.settings.get_setting("minimum_flood_depth"):
-                    # Transform shapes' CRS to EPSG:4326
-                    geom = rasterio.warp.transform_geom(
-                        dataset.crs, "EPSG:4326", geom, precision=6
-                    )
                     flood_shapes.append(geom)
         # clip population density raster with flood shapes and save the result
         affected_pop_raster, affected_pop_meta = clip_raster(
@@ -185,17 +187,18 @@ class Forecast:
         self.__compute_affected_pop_raster()
 
         # calculate affected population per admin division
-        for adm_lvl in self.flood_data.admin_levels:
+        for adm_lvl in self.flood_data.adm_levels:
 
             # get adm boundaries
-            gdf_adm = Load(
-                settings=self.settings, secrets=self.secrets
-            ).get_adm_boundaries(self.flood_data.country, adm_lvl)
+            gdf_adm = self.load.get_adm_boundaries(self.flood_data.country, adm_lvl)
+            gdf_adm = gdf_adm.to_crs("EPSG:4326")
 
             # perform zonal statistics on affected population raster
             with rasterio.open(self.aff_pop_filepath) as src:
                 raster_array = src.read(1)
+                raster_array[raster_array < 0.0] = 0.0
                 transform = src.transform
+
             stats = zonal_stats(
                 gdf_adm,
                 raster_array,
@@ -210,6 +213,7 @@ class Forecast:
             # perform zonal statistics on population density raster (to compute % aff pop)
             with rasterio.open(self.pop_filepath) as src:
                 raster_array = src.read(1)
+                raster_array[raster_array < 0.0] = 0.0
                 transform = src.transform
             stats = zonal_stats(
                 gdf_adm,
@@ -224,10 +228,19 @@ class Forecast:
 
             # add affected population to forecast data units
             for forecast_data_unit in self.flood_data.data_units:
-                if forecast_data_unit.triggered:
-                    self.pop_affected = gdf_aff_pop.loc[forecast_data_unit.pcode, "sum"]
-                    self.pop_affected_perc = (
-                        self.pop_affected / gdf_pop.loc[forecast_data_unit.pcode, "sum"]
+                if (
+                    forecast_data_unit.adm_level == adm_lvl
+                    and forecast_data_unit.triggered
+                ):
+                    forecast_data_unit.pop_affected = int(
+                        gdf_aff_pop.loc[forecast_data_unit.pcode, "sum"]
+                    )
+                    forecast_data_unit.pop_affected_perc = (
+                        float(
+                            forecast_data_unit.pop_affected
+                            / gdf_pop.loc[forecast_data_unit.pcode, "sum"]
+                        )
+                        * 100.0
                     )
 
     # START: TO BE DEPRECATED

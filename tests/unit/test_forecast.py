@@ -3,7 +3,11 @@ from datetime import datetime, timedelta
 from floodpipeline.pipeline import Pipeline
 from floodpipeline.secrets import Secrets
 from floodpipeline.settings import Settings
-from floodpipeline.data import BaseDataSet, RiverDischargeDataUnit
+from floodpipeline.data import (
+    BaseDataSet,
+    RiverDischargeDataUnit,
+    FloodForecastDataUnit,
+)
 
 if not os.path.exists(".env"):
     raise FileNotFoundError("credentials not found, run this test from root directory")
@@ -16,5 +20,3 @@ pipe = Pipeline(
 # flood_data = pipe.extract.get_data(source="GloFAS", country="UGA", adm_levels=[1])
 # for data_unit in flood_data.data_units:
 #     print(vars(data_unit))
-
-pipe.forecast.get_flood_map(country="UGA", rp=10)

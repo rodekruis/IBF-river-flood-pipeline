@@ -87,7 +87,7 @@ class BaseDataSet:
     def __init__(
         self,
         country: str = None,
-        timestamp: datetime = datetime.today(),
+        timestamp: datetime = datetime.now(),
         adm_levels: List[int] = None,
         data_units: List[BaseDataUnit] = [],
     ):
