@@ -16,6 +16,7 @@ import json
 import os
 import geopandas as gpd
 from typing import List
+from azure.storage.blob import BlobServiceClient
 
 COSMOS_DATA_TYPES = ["river-discharge", "flood-forecast", "trigger-threshold"]
 
@@ -199,3 +200,26 @@ class Load:
                 )
                 datasets.append(dataset)
         return datasets
+
+    def __get_blob_service_client(self, blob_path: str):
+        blob_service_client = BlobServiceClient.from_connection_string(
+            self.secrets.get_secret("blob_connection_string")
+        )
+        container = self.secrets.get_secret("blob_container_name")
+        return blob_service_client.get_blob_client(container=container, blob=blob_path)
+
+    def save_to_blob(self, local_path: str, file_dir_blob: str):
+        """Save file to Azure Blob Storage"""
+        # upload to Azure Blob Storage
+        blob_client = self.__get_blob_service_client(file_dir_blob)
+        with open(local_path, "rb") as upload_file:
+            blob_client.upload_blob(upload_file, overwrite=True)
+        logging.info("Successfully uploaded to Azure Blob Storage")
+
+    def get_from_blob(self, local_path: str, blob_path: str):
+        """Get file from Azure Blob Storage"""
+        blob_client = self.__get_blob_service_client(blob_path)
+
+        with open(local_path, "wb") as download_file:
+            download_file.write(blob_client.download_blob().readall())
+        logging.info("Successfully downloaded from Azure Blob Storage")

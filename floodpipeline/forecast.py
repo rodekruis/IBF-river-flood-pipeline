@@ -4,11 +4,45 @@ from floodpipeline.data import BaseDataSet, FloodForecastDataUnit
 from floodpipeline.load import Load
 import requests
 import urllib.request
+from shapely import Polygon
 import re
 import os
-from shapely.geometry import box
 import geopandas as gpd
 import rasterio
+from rasterio.merge import merge
+from rasterio.mask import mask
+
+
+def merge_rasters(raster_filepaths: list):
+    if len(raster_filepaths) > 0:
+        with rasterio.open(raster_filepaths[0]) as src:
+            out_meta = src.meta.copy()
+    mosaic, out_trans = merge(raster_filepaths)
+    out_meta.update(
+        {
+            "driver": "GTiff",
+            "height": mosaic.shape[1],
+            "width": mosaic.shape[2],
+            "transform": out_trans,
+        }
+    )
+    return mosaic, out_meta
+
+
+def clip_raster(raster_filepath: str, shapes: Polygon):
+    with rasterio.open(raster_filepath) as src:
+        outImage, out_transform = mask(src, [shapes], crop=True)
+        outMeta = src.meta.copy()
+    outMeta.update(
+        {
+            "driver": "GTiff",
+            "height": outImage.shape[1],
+            "width": outImage.shape[2],
+            "transform": out_transform,
+            "compress": "lzw",
+        }
+    )
+    return outImage, outMeta
 
 
 class Forecast:
@@ -59,53 +93,6 @@ class Forecast:
     ):
         """Determine if trigger level is reached, its probability, and the 'EAP Alert Class'"""
         pass
-
-    def get_flood_map(self, country: str, rp: int):
-        """Get flood map for a given country and return period"""
-        if rp not in [10, 20, 50, 75, 100, 200, 500]:
-            raise ValueError("Return Period must be in 10, 20, 50, 75, 100, 200 or 500")
-        flood_map_html = requests.get(
-            f"{self.settings.get_setting('global_flood_maps_url')}/RP{rp}/"
-        ).text
-        flood_map_files = re.findall(r"^ID(.*?).tif$", flood_map_html)
-        gdf_flood_map = gpd.GeoDataFrame(columns=["filename", "geometry"])
-        for file in flood_map_files:
-            if "N" in file:
-                max_lat = int(re.search(r"N\d{2}", file)[0][1:])
-            else:
-                max_lat = -int(re.search(r"S\d{2}", file)[0][1:])
-            min_lat = max_lat - 10
-            if "E" in file:
-                min_lon = int(re.search(r"E\d{2}", file)[0][1:])
-            else:
-                min_lon = -int(re.search(r"W\d{2}", file)[0][1:])
-            max_lon = min_lon + 10
-            geom = box(min_lon, min_lat, max_lon, max_lat)
-            gdf_flood_map.loc[len(gdf_flood_map)] = {"filename": file, "geometry": geom}
-
-        country_gdf = Load(secrets=self.secrets).get_adm_boundaries(
-            country=country, adm_level=1
-        )
-        gdf_flood_map = gdf_flood_map[
-            gdf_flood_map["geometry"].touches(country_gdf["geometry"])
-        ]
-        flood_map_files = gdf_flood_map["filename"].tolist()
-        for flood_map_file in flood_map_files:
-            url = f"{self.settings.get_setting('global_flood_maps_url')}/RP{rp}/{flood_map_file}"
-            urllib.request.urlretrieve(url, flood_map_file)
-        mosaic, out_meta = rasterio.merge(flood_map_files)
-        out_meta.update(
-            {
-                "driver": "GTiff",
-                "height": mosaic.shape[1],
-                "width": mosaic.shape[2],
-                "transform": out_meta,
-            }
-        )
-        with rasterio.open(f"data/input/flood_map_RP{rp}.tif", "w", **out_meta) as dest:
-            dest.write(mosaic)
-        for flood_map_file in flood_map_files:
-            os.remove(flood_map_file)
 
     def __compute_flood_extent(self):
         """Compute flood extent"""

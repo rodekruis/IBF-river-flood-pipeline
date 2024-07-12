@@ -29,6 +29,7 @@ load = Load(settings=settings, secrets=secrets)
 
 
 def add_flood_thresholds():
+    os.makedirs("data/updates", exist_ok=True)
 
     # Download flood thresholds
     html_page = BeautifulSoup(
@@ -38,7 +39,7 @@ def add_flood_thresholds():
     flood_thresholds_files = {}
     for rp in RETURN_PERIODS:
         filename = f"flood_threshold_glofas_v4_rl_{rp}.nc"
-        filepath = os.path.join("data", "input", filename)
+        filepath = os.path.join("data", "updates", filename)
         if not os.path.exists(filepath):
             print(f"Downloading {filename}")
             urls = html_page.find_all("a", href=True)

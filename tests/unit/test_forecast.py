@@ -6,10 +6,12 @@ from floodpipeline.settings import Settings
 from floodpipeline.data import BaseDataSet, RiverDischargeDataUnit
 
 if not os.path.exists(".env"):
-    raise FileNotFoundError('credentials not found, run this test from root directory')
+    raise FileNotFoundError("credentials not found, run this test from root directory")
 if not os.path.exists("config/config-template.yaml"):
-    raise FileNotFoundError('config not found, run this test from root directory')
-pipe = Pipeline(settings=Settings("config/config-template.yaml"), secrets=Secrets(".env"))
+    raise FileNotFoundError("config not found, run this test from root directory")
+pipe = Pipeline(
+    settings=Settings("config/config-template.yaml"), secrets=Secrets(".env")
+)
 
 # flood_data = pipe.extract.get_data(source="GloFAS", country="UGA", adm_levels=[1])
 # for data_unit in flood_data.data_units:

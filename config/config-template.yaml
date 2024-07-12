@@ -15,26 +15,5 @@ countries:
       - 1
       - 2
       - 3
-    alert-thresholds:
-    min-trigger-probability:
-
-#  KEN:
-#    admin-levels:
-#      - 1
-#    alert-thresholds:
-#    min-trigger-probability:
-#  ETH:
-#    admin-levels:
-#      - 1
-#    alert-thresholds:
-#    min-trigger-probability:
-#  SSD:
-#    admin-levels:
-#      - 1
-#    alert-thresholds:
-#    min-trigger-probability:
-#  ZMB:
-#    admin-levels:
-#      - 1
-#    alert-thresholds:
-#    min-trigger-probability:
+    alert-threshold:  # to be changed
+    min-trigger-probability:  # to be changed
