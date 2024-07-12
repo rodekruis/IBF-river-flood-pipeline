@@ -14,6 +14,7 @@ import azure.cosmos.cosmos_client as cosmos_client
 import logging
 import json
 import os
+import requests
 import geopandas as gpd
 from typing import List
 from azure.storage.blob import BlobServiceClient
@@ -76,6 +77,18 @@ class Load:
             raise TypeError(f"invalid format of secrets, use secrets.Secrets")
         secrets.check_secrets(["COSMOS_URL", "COSMOS_KEY", "SQL_USER", "SQL_PASSWORD"])
         self.secrets = secrets
+
+    def get_population_density(self, country: str, file_path: str):
+        """Get population density data from worldpop and save to file_path"""
+        r = requests.get(
+            f"{self.settings.get_setting('worldpop_url')}/{country.upper()}/{country.lower()}_ppp_2022_1km_UNadj_constrained.tif"
+        )
+        if "404 Not Found" in str(r.content):
+            raise FileNotFoundError(
+                f"Population density data not found for country {country}"
+            )
+        with open(file_path, "wb") as file:
+            file.write(r.content)
 
     def get_adm_boundaries(self, country: str, adm_level: int) -> gpd.GeoDataFrame:
         """Get administrative boundaries from PostgreSQL database"""

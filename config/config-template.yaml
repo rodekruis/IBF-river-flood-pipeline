@@ -3,6 +3,10 @@
 floods:
   glofas_ftp_server: aux.ecmwf.int/fc_netcdf
   global_flood_maps_url: https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/CEMS-GLOFAS/flood_hazard
+  minimum_flood_depth: 0.5  # minimum flood depth considered when calculating affected population
+
+auxiliary:
+  worldpop_url: https://data.worldpop.org/GIS/Population/Global_2021_2022_1km_UNadj/constrained/2022
 
 databases:
   postgresql_server: 510-postgresql-flex-server.postgres.database.azure.com
@@ -15,5 +19,7 @@ countries:
       - 1
       - 2
       - 3
-    alert-threshold:  # to be changed
-    min-trigger-probability:  # to be changed
+      - 4
+    trigger-on-admin-level: 1
+    trigger-on-return-period: 5
+    trigger-on-minimum-probability: 0.6
