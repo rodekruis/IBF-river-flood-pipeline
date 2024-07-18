@@ -1,12 +1,12 @@
-name: Update IBF flood pipeline docker image in ACR
+name: Update IBF river flood pipeline docker image in ACR
 
 on:
   push:
     branches:
-      - master
+      - main
     
 env:
-  IMAGE_NAME: ibf-flood-pipeline
+  IMAGE_NAME: ibf-river-flood-pipeline
   
 jobs:
   build:
