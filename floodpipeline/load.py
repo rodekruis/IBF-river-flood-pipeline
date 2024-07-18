@@ -1,3 +1,5 @@
+import os.path
+
 from floodpipeline.secrets import Secrets
 from floodpipeline.settings import Settings
 from floodpipeline.data import (
@@ -12,8 +14,8 @@ from sqlalchemy.exc import ProgrammingError
 from datetime import datetime, timedelta
 import azure.cosmos.cosmos_client as cosmos_client
 import logging
-import json
-import os
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import requests
 import geopandas as gpd
 from typing import List
@@ -75,7 +77,17 @@ class Load:
         """Set secrets for storage"""
         if not isinstance(secrets, Secrets):
             raise TypeError(f"invalid format of secrets, use secrets.Secrets")
-        secrets.check_secrets(["COSMOS_URL", "COSMOS_KEY", "SQL_USER", "SQL_PASSWORD"])
+        secrets.check_secrets(
+            [
+                "COSMOS_URL",
+                "COSMOS_KEY",
+                "SQL_USER",
+                "SQL_PASSWORD",
+                "IBF_API_URL",
+                "IBF_API_USER",
+                "IBF_API_PASSWORD",
+            ]
+        )
         self.secrets = secrets
 
     def get_population_density(self, country: str, file_path: str):
@@ -110,9 +122,116 @@ class Load:
             )
         return gdf
 
-    def send_to_ibf(self, dataset):
-        """Send data to IBF"""
+    def __ibf_api_authenticate(self):
+        login_response = requests.post(
+            self.secrets.get_secret("IBF_API_URL") + "user/login",
+            data=[
+                ("email", self.secrets.get_secret("IBF_API_USER")),
+                ("password", self.secrets.get_secret("IBF_API_PASSWORD")),
+            ],
+        )
+        return login_response.json()["user"]["token"]
+
+    def __ibf_api_post_request(self, path, body=None, files=None):
+        token = self.__ibf_api_authenticate()
+        if body is not None:
+            headers = {
+                "Authorization": "Bearer " + token,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+        elif files is not None:
+            headers = {"Authorization": "Bearer " + token}
+        else:
+            raise ValueError("No body or files provided")
+        session = requests.Session()
+        retry = Retry(connect=3, backoff_factor=0.5)
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        r = session.post(
+            self.secrets.get_secret("IBF_API_URL") + path,
+            json=body,
+            files=files,
+            headers=headers,
+        )
+        if r.status_code >= 400:
+            # logger.info(r.text)
+            # logger.error("PIPELINE ERROR")
+            raise ValueError()
+
+    def send_to_ibf_api(
+        self, flood_forecast_data: BaseDataSet, flood_extent: str = None
+    ):
+        """Send flood forecast data to IBF API"""
+        upload_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # event/triggers-per-leadtime - trigger per lead time
+        triggers_per_lead_time = []
+        for lead_time in flood_forecast_data.get_lead_times():
+            is_trigger, is_alert = False, False
+            for pcode in flood_forecast_data.get_pcodes():
+                du = flood_forecast_data.get_data_unit(pcode, lead_time)
+                if du.triggered:
+                    is_trigger = True
+                if du.alert_class > 0:
+                    is_alert = True
+            triggers_per_lead_time.append(
+                {
+                    "leadTime": f"{lead_time}-day",
+                    "triggered": is_trigger,
+                    "thresholdReached": is_alert,
+                }
+            )
+        body = {
+            "countryCodeISO3": flood_forecast_data.country,
+            "triggersPerLeadTime": triggers_per_lead_time,
+            "disasterType": "floods",
+            "date": upload_time,
+        }
+        self.__ibf_api_post_request("event/triggers-per-leadtime", body=body)
+
+        # point-data/dynamic - trigger and threshold per GloFAS station
         # TBI
+
+        # admin-area-dynamic-data/exposure - exposure data
+        for indicator in [
+            "population_affected",
+            "population_affected_percentage",
+            "alert_threshold",
+        ]:
+            for lead_time in flood_forecast_data.get_lead_times():
+                for adm_lvl in flood_forecast_data.adm_levels:
+                    exposure_pcodes = []
+                    for pcode in flood_forecast_data.get_pcodes(adm_level=adm_lvl):
+                        du = flood_forecast_data.get_data_unit(pcode, lead_time)
+                        exposure_pcodes.append(
+                            {
+                                "placeCode": pcode,
+                                "amount": getattr(du, indicator),
+                            }
+                        )
+                    body = {
+                        "countryCodeISO3": flood_forecast_data.country,
+                        "leadTime": f"{lead_time}-day",
+                        "dynamicIndicator": indicator,
+                        "adminLevel": adm_lvl,
+                        "exposurePlaceCodes": exposure_pcodes,
+                        "disasterType": "floods",
+                        "date": upload_time,
+                    }
+                    self.__ibf_api_post_request(
+                        "event/triggers-per-leadtime", body=body
+                    )
+
+        # admin-area-dynamic-data/raster/floods - flood extent raster
+        if flood_extent is not None:
+            if not os.path.exists(flood_extent):
+                raise FileNotFoundError(f"Flood extent raster {flood_extent} not found")
+            files = {"file": open(flood_extent, "rb")}
+            self.__ibf_api_post_request(
+                "admin-area-dynamic-data/raster/floods", files=files
+            )
 
     def save_pipeline_data(self, data_type: str, dataset: BaseDataSet):
         """Upload pipeline datasets to Cosmos DB"""

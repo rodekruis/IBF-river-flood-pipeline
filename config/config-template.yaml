@@ -24,3 +24,20 @@ countries:
     trigger-on-admin-level: 1
     trigger-on-return-period: 5
     trigger-on-minimum-probability: 0.6
+    alert-on-return-period:
+      min: 1.5
+      med: 2
+      max: 5
+
+  - KEN:
+    admin-levels:
+      - 1
+      - 2
+      - 3
+
+  - ETH:
+    admin-levels:
+      - 1
+      - 2
+      - 3
+

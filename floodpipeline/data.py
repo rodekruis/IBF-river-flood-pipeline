@@ -2,11 +2,6 @@ from datetime import datetime
 from typing import List, TypedDict
 
 
-class TriggerThreshold(TypedDict):
-    return_period: str
-    threshold: float
-
-
 class BaseDataUnit:
     """Base class for pipeline data units"""
 
@@ -50,6 +45,22 @@ class FloodForecastDataUnit(BaseDataUnit):
         )  # return period in years
         # END: TO BE DEPRECATED
 
+    # START: TO BE DEPRECATED
+    # aliases for the IBF API
+    @property
+    def population_affected(self) -> int:
+        return self.pop_affected
+
+    @property
+    def population_affected_percentage(self) -> float:
+        return self.pop_affected_perc
+
+    @property
+    def alert_threshold(self) -> float:
+        return self.alert_class
+
+    # END: TO BE DEPRECATED
+
 
 # START: TO BE DEPRECATED
 class GloFASStationFloodForecastDataUnit(BaseDataUnit):
@@ -71,6 +82,11 @@ class GloFASStationFloodForecastDataUnit(BaseDataUnit):
 
 
 # END: TO BE DEPRECATED
+
+
+class TriggerThreshold(TypedDict):
+    return_period: str
+    threshold: float
 
 
 class TriggerThresholdDataUnit(BaseDataUnit):
@@ -95,6 +111,19 @@ class BaseDataSet:
         self.timestamp = timestamp
         self.adm_levels = adm_levels
         self.data_units = data_units
+
+    def get_pcodes(self, adm_level: int = None):
+        """Return list of unique pcodes, optionally filtered by adm_level"""
+        if not adm_level:
+            return list(set([x.pcode for x in self.data_units]))
+        else:
+            return list(
+                set([x.pcode for x in self.data_units if x.adm_level == adm_level])
+            )
+
+    def get_lead_times(self):
+        """Return list of unique lead times"""
+        return list(set([x.lead_time for x in self.data_units]))
 
     def get_data_unit(self, pcode: str, lead_time: int):
         """Get data unit by pcode and lead time"""
