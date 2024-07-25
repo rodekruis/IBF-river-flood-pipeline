@@ -94,6 +94,7 @@ class TriggerThresholdDataUnit(BaseDataUnit):
 
     def __init__(self, trigger_thresholds: List[TriggerThreshold], **kwargs):
         super().__init__(**kwargs)
+        self.lead_time = kwargs.get('lead_time')
         self.trigger_thresholds: List[TriggerThreshold] = trigger_thresholds
 
 
