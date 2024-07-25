@@ -13,6 +13,7 @@ import rasterio
 from rasterio.merge import merge
 from rasterio.mask import mask
 from rasterio.features import shapes
+import itertools
 
 
 def merge_rasters(raster_filepaths: list) -> tuple:
@@ -103,7 +104,39 @@ class Forecast:
         trigger_thresholds: BaseDataSet,
     ):
         """Determine if trigger level is reached, its probability, and the 'EAP Alert Class'"""
-        pass
+        country_settings = next(item for item in self.settings.settings['countries'] if river_discharges.country in item)
+        for lead_time, pcode in itertools.product(river_discharges.get_lead_times(), river_discharges.get_pcodes()):
+            river_discharge_data_unit = river_discharges.get_data_unit(pcode, lead_time)
+            trigger_thresholds_du = trigger_thresholds.get_data_unit(pcode, lead_time)
+
+            if pcode in trigger_thresholds_du.pcode:
+                trigger_threshold = country_settings['trigger-on-return-period']
+                threshold = next(item for item in trigger_thresholds_du.trigger_thresholds 
+                                 if item['return_period'] == trigger_threshold)
+                threshold_checks = map(lambda x: 1 if x > threshold['threshold'] else 0, 
+                                       river_discharge_data_unit.river_discharge_ensemble)
+                ensemble_options = len(river_discharge_data_unit.river_discharge_ensemble)
+                dis_avg = sum(river_discharge_data_unit.river_discharge_ensemble)/ensemble_options
+                likelihood = sum(threshold_checks)/ensemble_options
+                severity = threshold['return_period']
+                # # START: TO BE DEPRECATED
+                triggered = 1 if severity > trigger_threshold else 0
+                alert_class = self.__classify_eap_alert(severity, country_settings['alert-on-return-period'])
+                # threshold_reached = True if 'max' in alert_class else False
+                # # END: TO BE DEPRECATED
+                forecast_data_unit = FloodForecastDataUnit(
+                    lead_time=lead_time,
+                    likelihood=likelihood,
+                    severity=severity,
+                    # START: TO BE DEPRECATED
+                    triggered=triggered,
+                    alert_class=alert_class,
+                    return_period=severity
+                    # END: TO BE DEPRECATED
+                )
+                print('forecast_data_unit: ', forecast_data_unit)
+                self.flood_data.upsert_data_unit(forecast_data_unit)
+                print('flood_data: ', vars(self.flood_data))
 
     def __compute_flood_extent(self):
         """Compute flood extent raster"""
@@ -253,3 +286,23 @@ class Forecast:
         pass
 
     # END: TO BE DEPRECATED
+
+    def __classify_eap_alert(self, severity, alert_levels):
+        ''' 
+        Classify EAP Alert based on flood forecast return period specified in settings.py
+        Applicable only for Uganda
+        '''
+        if not severity:
+            return "no"
+        elif severity >= alert_levels['max']:
+            return "max"
+        elif severity >= alert_levels['med']:
+            return "med"
+        elif severity >= alert_levels['min']:
+            return "min"
+        else:
+            return "no"
+
+    def __calculate_probability(self, river_discharges):
+        '''Calculate probability of river discharge'''
+        pass
