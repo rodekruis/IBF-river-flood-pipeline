@@ -6,14 +6,17 @@ import click
 
 @click.command()
 @click.option("--country", help="country ISO3", default="UGA")
-def run_river_flood_pipeline(country):
+@click.option("--extract", help="extract river data", default=False, is_flag=True)
+@click.option("--forecast", help="forecast floods", default=False, is_flag=True)
+@click.option("--send", help="send to IBF", default=False, is_flag=True)
+def run_river_flood_pipeline(country, extract, forecast, send):
     pipe = Pipeline(
         settings=Settings("config/config-template.yaml"), secrets=Secrets(".env")
     )
     pipe.run_pipeline(
-        extract=True,
-        forecast=True,
-        send=False,
+        extract=extract,
+        forecast=forecast,
+        send=send,
     )
 
 
