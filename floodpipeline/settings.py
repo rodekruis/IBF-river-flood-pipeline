@@ -42,6 +42,16 @@ class Settings:
             raise ValueError(f"Setting {setting} not found in {self.setting_path}")
         return setting_value
 
+    def get_country_setting(self, country: str, setting: str):
+        country_setting = next(
+            x for x in self.get_setting("countries") if x["name"] == country
+        )
+        if not country_setting:
+            raise ValueError(f"Country {country} not found in {self.setting_path}")
+        if setting not in country_setting.keys():
+            raise ValueError(f"Setting {setting} not found for country {country}")
+        return country_setting[setting]
+
     def check_settings(self, settings: List[str]):
         missing_settings = []
         for setting in settings:

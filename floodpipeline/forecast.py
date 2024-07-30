@@ -1,6 +1,6 @@
 from floodpipeline.secrets import Secrets
 from floodpipeline.settings import Settings
-from floodpipeline.data import BaseDataSet, FloodForecastDataUnit
+from floodpipeline.data import BaseDataSet, FloodForecastDataUnit, FloodForecast
 from floodpipeline.load import Load
 import time
 from typing import List
@@ -104,39 +104,90 @@ class Forecast:
         trigger_thresholds: BaseDataSet,
     ):
         """Determine if trigger level is reached, its probability, and the 'EAP Alert Class'"""
-        country_settings = next(item for item in self.settings.settings['countries'] if river_discharges.country in item)
-        for lead_time, pcode in itertools.product(river_discharges.get_lead_times(), river_discharges.get_pcodes()):
+        country = self.flood_data.country
+        for lead_time, pcode in itertools.product(
+            river_discharges.get_lead_times(), river_discharges.get_pcodes()
+        ):
             river_discharge_data_unit = river_discharges.get_data_unit(pcode, lead_time)
-            trigger_thresholds_du = trigger_thresholds.get_data_unit(pcode, lead_time)
+            trigger_threshold_du_data_unit = trigger_thresholds.get_data_unit(pcode)
+            adm_level = river_discharge_data_unit.adm_level
 
-            if pcode in trigger_thresholds_du.pcode:
-                trigger_threshold = country_settings['trigger-on-return-period']
-                threshold = next(item for item in trigger_thresholds_du.trigger_thresholds 
-                                 if item['return_period'] == trigger_threshold)
-                threshold_checks = map(lambda x: 1 if x > threshold['threshold'] else 0, 
-                                       river_discharge_data_unit.river_discharge_ensemble)
-                ensemble_options = len(river_discharge_data_unit.river_discharge_ensemble)
-                dis_avg = sum(river_discharge_data_unit.river_discharge_ensemble)/ensemble_options
-                likelihood = sum(threshold_checks)/ensemble_options
-                severity = threshold['return_period']
-                # # START: TO BE DEPRECATED
-                triggered = 1 if severity > trigger_threshold else 0
-                alert_class = self.__classify_eap_alert(severity, country_settings['alert-on-return-period'])
-                # threshold_reached = True if 'max' in alert_class else False
-                # # END: TO BE DEPRECATED
-                forecast_data_unit = FloodForecastDataUnit(
-                    lead_time=lead_time,
-                    likelihood=likelihood,
-                    severity=severity,
-                    # START: TO BE DEPRECATED
-                    triggered=triggered,
-                    alert_class=alert_class,
-                    return_period=severity
-                    # END: TO BE DEPRECATED
+            likelihood_per_return_period, flood_forecasts = {}, []
+            for trigger_threshold in trigger_threshold_du_data_unit.trigger_thresholds:
+                threshold_checks = map(
+                    lambda x: 1 if x > trigger_threshold["threshold"] else 0,
+                    river_discharge_data_unit.river_discharge_ensemble,
                 )
-                print('forecast_data_unit: ', forecast_data_unit)
-                self.flood_data.upsert_data_unit(forecast_data_unit)
-                print('flood_data: ', vars(self.flood_data))
+                likelihood = sum(threshold_checks) / len(
+                    river_discharge_data_unit.river_discharge_ensemble
+                )
+                return_period = trigger_threshold["return_period"]
+                likelihood_per_return_period[return_period] = likelihood
+                flood_forecasts.append(
+                    FloodForecast(return_period=return_period, likelihood=likelihood)
+                )
+
+            # START: TO BE DEPRECATED
+            trigger_on_return_period = self.settings.get_country_setting(
+                country, "trigger-on-return-period"
+            )
+            trigger_on_minimum_probability = self.settings.get_country_setting(
+                country, "trigger-on-minimum-probability"
+            )
+            alert_on_return_period = self.settings.get_country_setting(
+                country, "alert-on-return-period"
+            )
+            alert_on_minimum_probability = self.settings.get_country_setting(
+                country, "alert-on-minimum-probability"
+            )
+            if trigger_on_return_period not in likelihood_per_return_period.keys():
+                raise ValueError(
+                    f"No threshold found for return period {trigger_on_return_period}, "
+                    f"while being used to define trigger in config file (trigger-on-return-period)."
+                )
+            triggered = (
+                True
+                if likelihood_per_return_period[trigger_on_return_period]
+                >= trigger_on_minimum_probability
+                else False
+            )
+            return_period = next(
+                key
+                for key, value in reversed(likelihood_per_return_period.items())
+                if value >= trigger_on_minimum_probability
+            )
+            if any(
+                rp not in likelihood_per_return_period.keys()
+                for rp in alert_on_return_period.values()
+            ):
+                missing_rps = [
+                    rp
+                    for rp in alert_on_return_period.values()
+                    if rp not in likelihood_per_return_period.keys()
+                ]
+                raise ValueError(
+                    f"No threshold found for return periods {missing_rps}, "
+                    f"while being used to define alert classes in config file (alert-on-return-period)."
+                )
+            alert_class = self.__classify_eap_alert(
+                likelihood_per_return_period,
+                alert_on_return_period,
+                alert_on_minimum_probability,
+            )
+            # END: TO BE DEPRECATED
+            # threshold_reached = True if 'max' in alert_class else False
+            forecast_data_unit = FloodForecastDataUnit(
+                adm_level=adm_level,
+                pcode=pcode,
+                lead_time=lead_time,
+                flood_forecasts=flood_forecasts,
+                # START: TO BE DEPRECATED
+                triggered=triggered,
+                return_period=return_period,
+                alert_class=alert_class,
+                # END: TO BE DEPRECATED
+            )
+            self.flood_data.upsert_data_unit(forecast_data_unit)
 
     def __compute_flood_extent(self):
         """Compute flood extent raster"""
@@ -161,12 +212,18 @@ class Forecast:
 
             # calculate flood extent for each triggered admin division
             for forecast_data_unit in self.flood_data.data_units:
+                print(vars(forecast_data_unit))
                 if (
                     forecast_data_unit.adm_level == adm_lvl
                     and forecast_data_unit.triggered
                 ):
                     adm_bounds = gdf_adm.loc[forecast_data_unit.pcode, "geometry"]
                     rp = forecast_data_unit.return_period
+
+                    # if return period is not available, use the smallest available
+                    if rp not in flood_rasters.keys():
+                        rp = min(flood_rasters.keys())
+
                     # clip flood extent raster with admin division boundaries
                     flood_raster_data, flood_raster_meta = clip_raster(
                         flood_rasters[rp], [adm_bounds]
@@ -183,6 +240,8 @@ class Forecast:
 
         # merge flood extents of each triggered admin division
         flood_raster_data, flood_raster_meta = merge_rasters(flood_rasters_admin_div)
+        if os.path.exists(self.flood_extent_filepath):
+            os.remove(self.flood_extent_filepath)
         with rasterio.open(
             self.flood_extent_filepath, "w", **flood_raster_meta
         ) as dest:
@@ -210,6 +269,8 @@ class Forecast:
         affected_pop_raster, affected_pop_meta = clip_raster(
             self.pop_filepath, flood_shapes
         )
+        if os.path.exists(self.aff_pop_filepath):
+            os.remove(self.aff_pop_filepath)
         with rasterio.open(self.aff_pop_filepath, "w", **affected_pop_meta) as dest:
             dest.write(affected_pop_raster)
 
@@ -287,22 +348,28 @@ class Forecast:
 
     # END: TO BE DEPRECATED
 
-    def __classify_eap_alert(self, severity, alert_levels):
-        ''' 
+    def __classify_eap_alert(
+        self,
+        likelihood_per_return_period: dict,
+        alert_on_return_period: dict,
+        alert_on_minimum_probability: float,
+    ) -> str:
+        """
         Classify EAP Alert based on flood forecast return period specified in settings.py
-        Applicable only for Uganda
-        '''
-        if not severity:
-            return "no"
-        elif severity >= alert_levels['max']:
-            return "max"
-        elif severity >= alert_levels['med']:
-            return "med"
-        elif severity >= alert_levels['min']:
-            return "min"
-        else:
-            return "no"
+        """
+        alert_on_return_period = {
+            k: v
+            for k, v in sorted(alert_on_return_period.items(), key=lambda item: item[1])
+        }  # order by return period, from smallest to largest
+        alert_class = "no"
+        for class_, return_period in alert_on_return_period.items():
+            if (
+                likelihood_per_return_period[return_period]
+                >= alert_on_minimum_probability
+            ):
+                alert_class = class_
+        return alert_class
 
     def __calculate_probability(self, river_discharges):
-        '''Calculate probability of river discharge'''
+        """Calculate probability of river discharge"""
         pass

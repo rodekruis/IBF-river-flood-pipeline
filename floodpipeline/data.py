@@ -21,31 +21,30 @@ class RiverDischargeDataUnit(BaseDataUnit):
         )
 
 
+class FloodForecast(TypedDict):
+    return_period: float
+    likelihood: float
+
+
 class FloodForecastDataUnit(BaseDataUnit):
     """Flood forecast data unit"""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.lead_time = kwargs.get("lead_time")
-        self.likelihood: float = kwargs.get(
-            "likelihood", None
-        )  # probablity of occurrence [0, 1]
-        self.severity: float = kwargs.get(
-            "severity", None
-        )  # severity of the event [0, 1]
+        self.flood_forecasts: List[FloodForecast] = kwargs.get("flood_forecasts", None)
         self.pop_affected: int = kwargs.get("pop_affected", None)  # population affected
         self.pop_affected_perc: float = kwargs.get(
             "pop_affected_perc", None
         )  # population affected (%)
         # START: TO BE DEPRECATED
         self.triggered: bool = kwargs.get("triggered", None)  # triggered or not
+        self.return_period: float = kwargs.get("return_period", None)  # return period
         self.alert_class: float = kwargs.get("alert_class", None)  # alert class [0, 1]
-        self.return_period: int = kwargs.get(
-            "return_period", None
-        )  # return period in years
         # END: TO BE DEPRECATED
 
     # START: TO BE DEPRECATED
+
     # aliases for the IBF API
     @property
     def population_affected(self) -> int:
@@ -75,17 +74,17 @@ class GloFASStationFloodForecastDataUnit(BaseDataUnit):
         )  # severity of the event [0, 1]
         self.station: str = kwargs.get("station", None)  # station ID
         self.triggered: bool = kwargs.get("triggered", None)  # triggered or not
-        self.alert_class: float = kwargs.get("alert_class", None)  # alert class [0, 1]
-        self.return_period: int = kwargs.get(
+        self.return_period: float = kwargs.get(
             "return_period", None
         )  # return period in years
+        self.alert_class: float = kwargs.get("alert_class", None)  # alert class [0, 1]
 
 
 # END: TO BE DEPRECATED
 
 
 class TriggerThreshold(TypedDict):
-    return_period: str
+    return_period: float
     threshold: float
 
 
@@ -94,8 +93,21 @@ class TriggerThresholdDataUnit(BaseDataUnit):
 
     def __init__(self, trigger_thresholds: List[TriggerThreshold], **kwargs):
         super().__init__(**kwargs)
-        self.lead_time = kwargs.get('lead_time')
         self.trigger_thresholds: List[TriggerThreshold] = trigger_thresholds
+
+    def get_threshold(self, return_period: float) -> TriggerThreshold:
+        """Get trigger threshold by return period"""
+        trigger_threshold = next(
+            filter(
+                lambda x: x.get("return_period") == return_period,
+                self.trigger_thresholds,
+            ),
+            None,
+        )
+        if not trigger_threshold:
+            raise ValueError(f"Return period {return_period} not found")
+        else:
+            return trigger_threshold
 
 
 class BaseDataSet:
@@ -124,31 +136,51 @@ class BaseDataSet:
 
     def get_lead_times(self):
         """Return list of unique lead times"""
-        return list(set([x.lead_time for x in self.data_units]))
-
-    def get_data_unit(self, pcode: str, lead_time: int):
-        """Get data unit by pcode and lead time"""
-        bdu = next(
-            filter(
-                lambda x: x.pcode == pcode and x.lead_time == lead_time, self.data_units
-            ),
-            None,
+        return list(
+            set([x.lead_time for x in self.data_units if hasattr(x, "lead_time")])
         )
+
+    def get_data_unit(self, pcode: str, lead_time: int = None) -> BaseDataUnit:
+        """Get data unit by pcode and optionally by lead time"""
+        if lead_time:
+            bdu = next(
+                filter(
+                    lambda x: x.pcode == pcode and x.lead_time == lead_time,
+                    self.data_units,
+                ),
+                None,
+            )
+        else:
+            bdu = next(
+                filter(lambda x: x.pcode == pcode, self.data_units),
+                None,
+            )
         if not bdu:
-            return None
+            raise ValueError(
+                f"Data unit with pcode {pcode} and lead_time {lead_time} not found"
+            )
         else:
             return bdu
 
     def upsert_data_unit(self, data_unit: BaseDataUnit):
         """Add data unit; if it already exists, update it"""
-        bdu = next(
-            filter(
-                lambda x: x[1].pcode == data_unit.pcode
-                and x[1].lead_time == data_unit.lead_time,
-                enumerate(self.data_units),
-            ),
-            None,
-        )
+        if hasattr(data_unit, "lead_time"):
+            bdu = next(
+                filter(
+                    lambda x: x[1].pcode == data_unit.pcode
+                    and x[1].lead_time == data_unit.lead_time,
+                    enumerate(self.data_units),
+                ),
+                None,
+            )
+        else:
+            bdu = next(
+                filter(
+                    lambda x: x[1].pcode == data_unit.pcode,
+                    enumerate(self.data_units),
+                ),
+                None,
+            )
         if not bdu:
             self.data_units.append(data_unit)
         else:

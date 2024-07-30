@@ -15,7 +15,6 @@ from typing import List
 import urllib.request
 import ftplib
 
-logger = logging.getLogger(__name__)
 supported_sources = ["GloFAS"]
 
 
@@ -84,23 +83,26 @@ class Extract:
             raise ValueError(f"Set secrets before setting source")
         return self
 
-    def get_data(
-        self, country: str, adm_levels: List[int], source: str = None
-    ) -> BaseDataSet:
+    def get_data(self, country: str, source: str = None) -> BaseDataSet:
         """Get river discharge data from source and return BaseDataSet"""
         if source is None and self.source is None:
             raise RuntimeError("Source not specified, use set_source()")
         elif self.source is None and source is not None:
             self.source = source
         self.river_discharge_dataset = BaseDataSet(
-            country, datetime.today(), adm_levels
+            country=country,
+            timestamp=datetime.today(),
+            adm_levels=self.settings.get_country_setting(country, "adm_levels"),
         )
         if self.source == "GloFAS":
-            logging.info("Getting GloFAS data")
-            self._download_extract_glofas_data()
+            logging.info("get GloFAS data")
+            try:
+                self.__download_extract_glofas_data()
+            except Exception as e:
+                logging.error("Failed to download GloFAS data: " + str(e))
         return self.river_discharge_dataset
 
-    def _download_extract_glofas_data(self):
+    def __download_extract_glofas_data(self):
         """Download GloFAS data for each ensemble member and map to BaseDataSet"""
 
         # Download NetCDF files for each ensemble member
@@ -112,7 +114,7 @@ class Extract:
         netcdf_files = []
         while not downloadDone and time.time() < end:
             try:
-                netcdf_files = self._download_and_clip_glofas_data()
+                netcdf_files = self.__download_and_clip_glofas_data()
                 downloadDone = True
             except Exception as e:
                 error = (
@@ -120,10 +122,10 @@ class Extract:
                     + str(timeToRetry / 60)
                     + " minutes."
                 )
-                logger.error(error)
+                logging.error(error)
                 time.sleep(timeToRetry)
         if not downloadDone:
-            logger.error(
+            logging.error(
                 "GLofas download failed for "
                 + str(timeToTryDownload / 3600)
                 + " hours, no new dataset was found"
@@ -184,13 +186,13 @@ class Extract:
         )
         return ftp_path
 
-    def _download_and_clip_glofas_data(self) -> List[str]:
+    def __download_and_clip_glofas_data(self) -> List[str]:
         """
         Download one netcdf file per ensemble member and save it locally;
         slice the data to the extent of country and save it locally;
         return list of clipped files
         """
-        logger.info(f"start downloading glofas data for ensemble")
+        logging.info(f"start downloading glofas data for ensemble")
         country_gdf = Load(secrets=self.secrets).get_adm_boundaries(
             country=self.river_discharge_dataset.country, adm_level=1
         )
@@ -203,7 +205,7 @@ class Extract:
 
         for ensemble in range(0, nofEns):
             # Download netcdf file
-            logger.info(f"start downloading data for ensemble {ensemble}")
+            logging.info(f"start downloading data for ensemble {ensemble}")
             filename_local = os.path.join(self.inputPathGrid, f"GloFAS_{ensemble}.nc")
             filename_remote = f'dis_{"{:02d}".format(ensemble)}_{date}00.nc'
             ftp_path = self.__get_ftp_path(date)
@@ -211,21 +213,21 @@ class Extract:
                 max_retries, retries = 5, 0
                 while retries < max_retries:
                     try:
-                        logger.info("accessing GloFAS data")
+                        logging.info("accessing GloFAS data")
                         urllib.request.urlretrieve(
                             ftp_path + filename_remote, filename_local
                         )
-                        logger.info("downloaded GloFAS data")
+                        logging.info("downloaded GloFAS data")
                         break  # Connection successful, exit the loop
                     except ftplib.error_temp as e:
                         if "421 Maximum number of connections exceeded" in str(e):
                             retries += 1
-                            logger.info("Retrying FTP connection...")
+                            logging.info("Retrying FTP connection...")
                             time.sleep(5)  # Wait for 5 seconds before retrying
                         else:
                             raise  # Reraise other FTP errors
                 else:
-                    logger.info(
+                    logging.info(
                         "Max retries reached. Unable to establish FTP connection."
                     )
             ntecdf_files.append(filename_local)
@@ -238,6 +240,8 @@ class Extract:
             )
             nc_file_sliced.to_netcdf(filename_local_sliced)
             nc_file.close()
-            logger.info(f"finished downloading data for ensemble {ensemble}")
-        logger.info("finished downloading data")
+            logging.info(
+                f"finished downloading and clipping data for ensemble {ensemble}"
+            )
+        logging.info("finished downloading and clipping data")
         return ntecdf_files

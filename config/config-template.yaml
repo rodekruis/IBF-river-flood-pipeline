@@ -15,7 +15,7 @@ databases:
   postgresql_database: global510
 
 countries:
-  - UGA:
+  - name: UGA
     admin-levels:
       - 1
       - 2
@@ -28,14 +28,15 @@ countries:
       min: 1.5
       med: 2
       max: 5
+    alert-on-minimum-probability: 0.6
 
-  - KEN:
+  - name: KEN
     admin-levels:
       - 1
       - 2
       - 3
 
-  - ETH:
+  - name: ETH
     admin-levels:
       - 1
       - 2
