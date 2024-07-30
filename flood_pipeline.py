@@ -14,6 +14,7 @@ def run_river_flood_pipeline(country, extract, forecast, send):
         settings=Settings("config/config-template.yaml"), secrets=Secrets(".env")
     )
     pipe.run_pipeline(
+        country=country,
         extract=extract,
         forecast=forecast,
         send=send,
