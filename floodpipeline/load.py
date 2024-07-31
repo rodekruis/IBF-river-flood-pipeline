@@ -1,5 +1,5 @@
 import os.path
-
+import copy
 from floodpipeline.secrets import Secrets
 from floodpipeline.settings import Settings
 from floodpipeline.data import (
@@ -11,7 +11,7 @@ from floodpipeline.data import (
 )
 from sqlalchemy import create_engine
 from sqlalchemy.exc import ProgrammingError
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import azure.cosmos.cosmos_client as cosmos_client
 import logging
 from requests.adapters import HTTPAdapter
@@ -24,7 +24,14 @@ from azure.storage.blob import BlobServiceClient
 COSMOS_DATA_TYPES = ["river-discharge", "flood-forecast", "trigger-threshold"]
 
 
-def get_cosmos_query(start_date, end_date, country, adm_level, pcode, lead_time):
+def get_cosmos_query(
+    start_date=None,
+    end_date=None,
+    country=None,
+    adm_level=None,
+    pcode=None,
+    lead_time=None,
+):
     query = "SELECT * FROM c WHERE "
     if start_date is not None:
         query += f'c.timestamp >= "{start_date.strftime("%Y-%m-%dT%H:%M:%S")}" '
@@ -233,7 +240,9 @@ class Load:
                 "admin-area-dynamic-data/raster/floods", files=files
             )
 
-    def save_pipeline_data(self, data_type: str, dataset: BaseDataSet):
+    def save_pipeline_data(
+        self, data_type: str, dataset: BaseDataSet, replace_country: bool = False
+    ):
         """Upload pipeline datasets to Cosmos DB"""
         if data_type not in COSMOS_DATA_TYPES:
             raise ValueError(
@@ -248,6 +257,13 @@ class Load:
         )
         cosmos_db = client_.get_database_client("flood-pipeline")
         cosmos_container_client = cosmos_db.get_container_client(data_type)
+        if replace_country:
+            query = get_cosmos_query(country=dataset.country)
+            old_records = cosmos_container_client.query_items(query)
+            for old_record in old_records:
+                cosmos_container_client.delete_item(
+                    item=old_record.get("id"), partition_key=dataset.country
+                )
         for data_unit in dataset.data_units:
             record = vars(data_unit)
             record["timestamp"] = dataset.timestamp.strftime("%Y-%m-%dT%H:%M:%S")
@@ -256,8 +272,15 @@ class Load:
             cosmos_container_client.upsert_item(body=record)
 
     def get_pipeline_data(
-        self, data_type, start_date, end_date, country, adm_level, pcode, lead_time
-    ) -> List[BaseDataSet]:
+        self,
+        data_type,
+        country,
+        start_date=None,
+        end_date=None,
+        adm_level=None,
+        pcode=None,
+        lead_time=None,
+    ) -> BaseDataSet:
         """Download pipeline datasets from Cosmos DB"""
         if data_type not in COSMOS_DATA_TYPES:
             raise ValueError(
@@ -275,12 +298,15 @@ class Load:
         query = get_cosmos_query(
             start_date, end_date, country, adm_level, pcode, lead_time
         )
-        records = cosmos_container_client.query_items(
+        records_query = cosmos_container_client.query_items(
             query=query,
             enable_cross_partition_query=(
                 True if country is None else None
             ),  # country must be the partition key
         )
+        records = []
+        for record in records_query:
+            records.append(copy.deepcopy(record))
         datasets = []
         countries = list(set([record["country"] for record in records]))
         timestamps = list(set([record["timestamp"] for record in records]))
@@ -306,16 +332,17 @@ class Load:
                                 adm_level=record["adm_level"],
                                 pcode=record["pcode"],
                                 lead_time=record["lead_time"],
-                                likelihood=record["likelihood"],
-                                severity=record["severity"],
+                                flood_forecasts=record["flood_forecasts"],
                                 pop_affected=record["pop_affected"],
                                 pop_affected_perc=record["pop_affected_perc"],
+                                triggered=record["triggered"],
+                                return_period=record["return_period"],
+                                alert_class=record["alert_class"],
                             )
                         elif data_type == "trigger-threshold":
                             data_unit = TriggerThresholdDataUnit(
                                 adm_level=record["adm_level"],
                                 pcode=record["pcode"],
-                                lead_time=record["lead_time"],
                                 trigger_thresholds=record["trigger_thresholds"],
                             )
                         else:
@@ -331,7 +358,18 @@ class Load:
                     data_units=data_units,
                 )
                 datasets.append(dataset)
-        return datasets
+        if len(datasets) > 1:
+            raise KeyError(
+                f"Multiple datasets of type '{data_type}' found for country {country} in date range "
+                f"{start_date}-{end_date}; restrict the query."
+            )
+        elif len(datasets) == 0:
+            raise KeyError(
+                f"No datasets of type '{data_type}' found for country {country} in date range "
+                f"{start_date}-{end_date}."
+            )
+        else:
+            return datasets[0]
 
     def __get_blob_service_client(self, blob_path: str):
         blob_service_client = BlobServiceClient.from_connection_string(

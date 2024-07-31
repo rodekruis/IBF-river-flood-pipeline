@@ -33,9 +33,9 @@ class FloodForecastDataUnit(BaseDataUnit):
         super().__init__(**kwargs)
         self.lead_time = kwargs.get("lead_time")
         self.flood_forecasts: List[FloodForecast] = kwargs.get("flood_forecasts", None)
-        self.pop_affected: int = kwargs.get("pop_affected", None)  # population affected
+        self.pop_affected: int = kwargs.get("pop_affected", 0)  # population affected
         self.pop_affected_perc: float = kwargs.get(
-            "pop_affected_perc", None
+            "pop_affected_perc", 0.0
         )  # population affected (%)
         # START: TO BE DEPRECATED
         self.triggered: bool = kwargs.get("triggered", None)  # triggered or not

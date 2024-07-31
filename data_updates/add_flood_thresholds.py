@@ -49,7 +49,9 @@ def add_flood_thresholds():
 
     # Calculate zonal statistics
     for country_settings in settings.get_setting("countries"):
-        country = list(country_settings.keys())[0]
+        country = country_settings["name"]
+        if country != "UGA":
+            continue
         ttdus = []
 
         for adm_level in country_settings["admin-levels"]:
@@ -79,7 +81,9 @@ def add_flood_thresholds():
                     adm_level=int(adm_level),
                     pcode=row[f"adm{adm_level}_pcode"],
                     trigger_thresholds=[
-                        TriggerThreshold(return_period=rp, threshold=row[f"max_{rp}"])
+                        TriggerThreshold(
+                            return_period=float(rp), threshold=row[f"max_{rp}"]
+                        )
                         for rp in RETURN_PERIODS
                     ],
                 )
@@ -91,7 +95,7 @@ def add_flood_thresholds():
             adm_levels=country_settings["admin-levels"],
             data_units=ttdus,
         )
-        load.save_pipeline_data("trigger-threshold", ttds)
+        load.save_pipeline_data("trigger-threshold", ttds, replace_country=True)
 
 
 if __name__ == "__main__":

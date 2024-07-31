@@ -37,19 +37,22 @@ class Extract:
         self.settings = None
         self.inputPathGrid = "./data/input"
         self.river_discharge_dataset = None
+        self.load = Load()
         if not os.path.exists(self.inputPathGrid):
             os.makedirs(self.inputPathGrid)
         if settings is not None:
             self.set_settings(settings)
+            self.load.set_settings(settings)
         if secrets is not None:
             self.set_secrets(secrets)
+            self.load.set_secrets(secrets)
 
     def set_settings(self, settings):
         """Set settings"""
         if not isinstance(settings, Settings):
             raise TypeError(f"invalid format of settings, use settings.Settings")
         if self.source == "GloFAS":
-            settings.check_settings(["glofas_ftp_server"])
+            settings.check_settings(["glofas_ftp_server", "no_ensemble_members"])
         self.settings = settings
 
     def set_secrets(self, secrets):
@@ -92,14 +95,11 @@ class Extract:
         self.river_discharge_dataset = BaseDataSet(
             country=country,
             timestamp=datetime.today(),
-            adm_levels=self.settings.get_country_setting(country, "adm_levels"),
+            adm_levels=self.settings.get_country_setting(country, "admin-levels"),
         )
         if self.source == "GloFAS":
             logging.info("get GloFAS data")
-            try:
-                self.__download_extract_glofas_data()
-            except Exception as e:
-                logging.error("Failed to download GloFAS data: " + str(e))
+            self.__download_extract_glofas_data()
         return self.river_discharge_dataset
 
     def __download_extract_glofas_data(self):
@@ -113,23 +113,18 @@ class Extract:
         end = start + timeToTryDownload
         netcdf_files = []
         while not downloadDone and time.time() < end:
-            try:
-                netcdf_files = self.__download_and_clip_glofas_data()
-                downloadDone = True
-            except Exception as e:
-                error = (
-                    f"Download data failed: {e}. Will be trying again in "
-                    + str(timeToRetry / 60)
-                    + " minutes."
-                )
-                logging.error(error)
-                time.sleep(timeToRetry)
+            # try:
+            netcdf_files = self.__download_and_clip_glofas_data()
+            downloadDone = True
+            # except Exception as e:
+            #     error = (
+            #         f"Download data failed: {e}. Will be trying again in "
+            #         + str(timeToRetry / 60)
+            #         + " minutes."
+            #     )
+            #     logging.error(error)
+            #     time.sleep(timeToRetry)
         if not downloadDone:
-            logging.error(
-                "GLofas download failed for "
-                + str(timeToTryDownload / 3600)
-                + " hours, no new dataset was found"
-            )
             raise ValueError(
                 "GLofas download failed for "
                 + str(timeToTryDownload / 3600)
@@ -137,8 +132,9 @@ class Extract:
             )
 
         # Extract data from NetCDF files
+        logging.info("Extract zonal statistics from GloFAS data")
         for adm_level in self.river_discharge_dataset.adm_levels:
-            country_gdf = Load(secrets=self.secrets).get_adm_boundaries(
+            country_gdf = self.load.get_adm_boundaries(
                 country=self.river_discharge_dataset.country, adm_level=adm_level
             )
             for filename in netcdf_files:
@@ -157,13 +153,13 @@ class Extract:
                     )
                     dis = pd.concat([country_gdf, pd.DataFrame(stats)], axis=1)
                     for ix, row in dis.iterrows():
-                        rddu = self.river_discharge_dataset.get_data_unit(
-                            row[f"adm{adm_level}_pcode"], lead_time
-                        )
-                        if rddu is not None:
+                        try:
+                            rddu = self.river_discharge_dataset.get_data_unit(
+                                row[f"adm{adm_level}_pcode"], lead_time
+                            )
                             rddu.river_discharge_ensemble.append(row["max"])
                             self.river_discharge_dataset.upsert_data_unit(rddu)
-                        else:
+                        except ValueError:
                             self.river_discharge_dataset.upsert_data_unit(
                                 RiverDischargeDataUnit(
                                     adm_level=adm_level,
@@ -193,15 +189,14 @@ class Extract:
         return list of clipped files
         """
         logging.info(f"start downloading glofas data for ensemble")
-        country_gdf = Load(secrets=self.secrets).get_adm_boundaries(
+        country_gdf = self.load.get_adm_boundaries(
             country=self.river_discharge_dataset.country, adm_level=1
         )
         country_bounds = country_gdf.total_bounds
-        nofEns = self.settings.get_setting(
-            "no_ensemble_members"
-        )  # number of ensemble members
+        nofEns = self.settings.get_setting("no_ensemble_members")
         ntecdf_files = []
         date = datetime.today().strftime("%Y%m%d")
+        # date = (datetime.today() - timedelta(days=1)).strftime("%Y%m%d")
 
         for ensemble in range(0, nofEns):
             # Download netcdf file

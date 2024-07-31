@@ -143,7 +143,8 @@ class Forecast:
             if trigger_on_return_period not in likelihood_per_return_period.keys():
                 raise ValueError(
                     f"No threshold found for return period {trigger_on_return_period}, "
-                    f"while being used to define trigger in config file (trigger-on-return-period)."
+                    f"which defines trigger in config file (trigger-on-return-period). "
+                    f"Thresholds found: {likelihood_per_return_period.keys()}"
                 )
             triggered = (
                 True
@@ -152,9 +153,12 @@ class Forecast:
                 else False
             )
             return_period = next(
-                key
-                for key, value in reversed(likelihood_per_return_period.items())
-                if value >= trigger_on_minimum_probability
+                (
+                    key
+                    for key, value in reversed(likelihood_per_return_period.items())
+                    if value >= trigger_on_minimum_probability
+                ),
+                0.0,
             )
             if any(
                 rp not in likelihood_per_return_period.keys()
@@ -167,7 +171,8 @@ class Forecast:
                 ]
                 raise ValueError(
                     f"No threshold found for return periods {missing_rps}, "
-                    f"while being used to define alert classes in config file (alert-on-return-period)."
+                    f"which define alert classes in config file (alert-on-return-period). "
+                    f"Thresholds found: {likelihood_per_return_period.keys()}"
                 )
             alert_class = self.__classify_eap_alert(
                 likelihood_per_return_period,
@@ -212,7 +217,6 @@ class Forecast:
 
             # calculate flood extent for each triggered admin division
             for forecast_data_unit in self.flood_data.data_units:
-                print(vars(forecast_data_unit))
                 if (
                     forecast_data_unit.adm_level == adm_lvl
                     and forecast_data_unit.triggered
@@ -239,40 +243,44 @@ class Forecast:
                     flood_rasters_admin_div.append(flood_raster_admin_div)
 
         # merge flood extents of each triggered admin division
-        flood_raster_data, flood_raster_meta = merge_rasters(flood_rasters_admin_div)
-        if os.path.exists(self.flood_extent_filepath):
-            os.remove(self.flood_extent_filepath)
-        with rasterio.open(
-            self.flood_extent_filepath, "w", **flood_raster_meta
-        ) as dest:
-            dest.write(flood_raster_data)
-        # delete intermediate files
-        for file in flood_rasters_admin_div:
-            os.remove(file)
+        if len(flood_rasters_admin_div) > 0:
+            flood_raster_data, flood_raster_meta = merge_rasters(
+                flood_rasters_admin_div
+            )
+            if os.path.exists(self.flood_extent_filepath):
+                os.remove(self.flood_extent_filepath)
+            with rasterio.open(
+                self.flood_extent_filepath, "w", **flood_raster_meta
+            ) as dest:
+                dest.write(flood_raster_data)
+            # delete intermediate files
+            for file in flood_rasters_admin_div:
+                os.remove(file)
 
     def __compute_affected_pop_raster(self):
         """Compute affected population raster given a flood extent"""
-        # get population density raster
-        self.load.get_population_density(self.flood_data.country, self.pop_filepath)
-        # convert flood extent raster to vector (list of shapes)
-        flood_shapes = []
-        with rasterio.open(self.flood_extent_filepath) as dataset:
-            # Read the dataset's valid data mask as a ndarray.
-            image = dataset.read(1).astype(np.float32)
-            image[image >= 0] = 1
-            mask = dataset.dataset_mask()
-            rasterio_shapes = shapes(image, mask=mask, transform=dataset.transform)
-            for geom, val in rasterio_shapes:
-                if val >= self.settings.get_setting("minimum_flood_depth"):
-                    flood_shapes.append(geom)
-        # clip population density raster with flood shapes and save the result
-        affected_pop_raster, affected_pop_meta = clip_raster(
-            self.pop_filepath, flood_shapes
-        )
-        if os.path.exists(self.aff_pop_filepath):
-            os.remove(self.aff_pop_filepath)
-        with rasterio.open(self.aff_pop_filepath, "w", **affected_pop_meta) as dest:
-            dest.write(affected_pop_raster)
+        if os.path.exists(self.flood_extent_filepath):
+            # get population density raster
+            self.load.get_population_density(self.flood_data.country, self.pop_filepath)
+            # convert flood extent raster to vector (list of shapes)
+            flood_shapes = []
+            with rasterio.open(self.flood_extent_filepath) as dataset:
+                # Read the dataset's valid data mask as a ndarray.
+                image = dataset.read(1).astype(np.float32)
+                image[image >= 0] = 1
+                mask = dataset.dataset_mask()
+                rasterio_shapes = shapes(image, mask=mask, transform=dataset.transform)
+                for geom, val in rasterio_shapes:
+                    if val >= self.settings.get_setting("minimum_flood_depth"):
+                        flood_shapes.append(geom)
+            # clip population density raster with flood shapes and save the result
+            affected_pop_raster, affected_pop_meta = clip_raster(
+                self.pop_filepath, flood_shapes
+            )
+            if os.path.exists(self.aff_pop_filepath):
+                os.remove(self.aff_pop_filepath)
+            with rasterio.open(self.aff_pop_filepath, "w", **affected_pop_meta) as dest:
+                dest.write(affected_pop_raster)
 
     def __compute_affected_pop(self):
         """Compute affected population given a flood extent"""
@@ -280,62 +288,63 @@ class Forecast:
         # calculate affected population raster
         self.__compute_affected_pop_raster()
 
-        # calculate affected population per admin division
-        for adm_lvl in self.flood_data.adm_levels:
+        if os.path.exists(self.aff_pop_filepath):
+            # calculate affected population per admin division
+            for adm_lvl in self.flood_data.adm_levels:
 
-            # get adm boundaries
-            gdf_adm = self.load.get_adm_boundaries(self.flood_data.country, adm_lvl)
-            gdf_adm = gdf_adm.to_crs("EPSG:4326")
+                # get adm boundaries
+                gdf_adm = self.load.get_adm_boundaries(self.flood_data.country, adm_lvl)
+                gdf_adm = gdf_adm.to_crs("EPSG:4326")
 
-            # perform zonal statistics on affected population raster
-            with rasterio.open(self.aff_pop_filepath) as src:
-                raster_array = src.read(1)
-                raster_array[raster_array < 0.0] = 0.0
-                transform = src.transform
+                # perform zonal statistics on affected population raster
+                with rasterio.open(self.aff_pop_filepath) as src:
+                    raster_array = src.read(1)
+                    raster_array[raster_array < 0.0] = 0.0
+                    transform = src.transform
 
-            stats = zonal_stats(
-                gdf_adm,
-                raster_array,
-                affine=transform,
-                stats=["sum"],
-                all_touched=True,
-                nodata=0.0,
-            )
-            gdf_aff_pop = pd.concat([gdf_adm, pd.DataFrame(stats)], axis=1)
-            gdf_aff_pop.index = gdf_aff_pop[f"adm{adm_lvl}_pcode"]
+                stats = zonal_stats(
+                    gdf_adm,
+                    raster_array,
+                    affine=transform,
+                    stats=["sum"],
+                    all_touched=True,
+                    nodata=0.0,
+                )
+                gdf_aff_pop = pd.concat([gdf_adm, pd.DataFrame(stats)], axis=1)
+                gdf_aff_pop.index = gdf_aff_pop[f"adm{adm_lvl}_pcode"]
 
-            # perform zonal statistics on population density raster (to compute % aff pop)
-            with rasterio.open(self.pop_filepath) as src:
-                raster_array = src.read(1)
-                raster_array[raster_array < 0.0] = 0.0
-                transform = src.transform
-            stats = zonal_stats(
-                gdf_adm,
-                raster_array,
-                affine=transform,
-                stats=["sum"],
-                all_touched=True,
-                nodata=0.0,
-            )
-            gdf_pop = pd.concat([gdf_adm, pd.DataFrame(stats)], axis=1)
-            gdf_pop.index = gdf_pop[f"adm{adm_lvl}_pcode"]
+                # perform zonal statistics on population density raster (to compute % aff pop)
+                with rasterio.open(self.pop_filepath) as src:
+                    raster_array = src.read(1)
+                    raster_array[raster_array < 0.0] = 0.0
+                    transform = src.transform
+                stats = zonal_stats(
+                    gdf_adm,
+                    raster_array,
+                    affine=transform,
+                    stats=["sum"],
+                    all_touched=True,
+                    nodata=0.0,
+                )
+                gdf_pop = pd.concat([gdf_adm, pd.DataFrame(stats)], axis=1)
+                gdf_pop.index = gdf_pop[f"adm{adm_lvl}_pcode"]
 
-            # add affected population to forecast data units
-            for forecast_data_unit in self.flood_data.data_units:
-                if (
-                    forecast_data_unit.adm_level == adm_lvl
-                    and forecast_data_unit.triggered
-                ):
-                    forecast_data_unit.pop_affected = int(
-                        gdf_aff_pop.loc[forecast_data_unit.pcode, "sum"]
-                    )
-                    forecast_data_unit.pop_affected_perc = (
-                        float(
-                            forecast_data_unit.pop_affected
-                            / gdf_pop.loc[forecast_data_unit.pcode, "sum"]
+                # add affected population to forecast data units
+                for forecast_data_unit in self.flood_data.data_units:
+                    if (
+                        forecast_data_unit.adm_level == adm_lvl
+                        and forecast_data_unit.triggered
+                    ):
+                        forecast_data_unit.pop_affected = int(
+                            gdf_aff_pop.loc[forecast_data_unit.pcode, "sum"]
                         )
-                        * 100.0
-                    )
+                        forecast_data_unit.pop_affected_perc = (
+                            float(
+                                forecast_data_unit.pop_affected
+                                / gdf_pop.loc[forecast_data_unit.pcode, "sum"]
+                            )
+                            * 100.0
+                        )
 
     # START: TO BE DEPRECATED
     def __compute_triggers_stations(

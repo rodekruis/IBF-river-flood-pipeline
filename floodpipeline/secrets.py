@@ -58,8 +58,9 @@ class Secrets:
             ):
                 raise PermissionError("Missing Azure credentials")
             else:
+                credential = DefaultAzureCredential()
                 self.secrets = SecretClient(
-                    vault_url=self.secret_path, credential=DefaultAzureCredential()
+                    vault_url=self.secret_path, credential=credential
                 )
 
     def get_secret(self, secret):

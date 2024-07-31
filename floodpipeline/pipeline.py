@@ -3,6 +3,7 @@ from floodpipeline.forecast import Forecast
 from floodpipeline.load import Load
 from floodpipeline.secrets import Secrets
 from floodpipeline.settings import Settings
+from datetime import date, timedelta
 import logging
 
 logger = logging.getLogger()
@@ -46,17 +47,20 @@ class Pipeline:
                 )
                 logging.info("save river discharge data to storage")
                 self.load.save_pipeline_data(
-                    "river-discharge", self.river_discharge_dataset
+                    data_type="river-discharge", dataset=self.river_discharge_dataset
                 )
             else:
                 logging.info("get river discharge data from storage")
                 self.river_discharge_dataset = self.load.get_pipeline_data(
-                    "river-discharge"
+                    data_type="river-discharge",
+                    country=country,
+                    start_date=date.today(),
+                    end_date=date.today() + timedelta(days=1),
                 )
             if forecast:
                 logging.info("get trigger thresholds from storage")
                 self.trigger_thresholds_dataset = self.load.get_pipeline_data(
-                    "trigger-threshold"
+                    data_type="trigger-threshold", country=country
                 )
                 logging.info("forecast floods")
                 self.flood_forecast_dataset = self.forecast.forecast(
@@ -65,7 +69,7 @@ class Pipeline:
                 )
                 logging.info("save flood forecasts to storage")
                 self.load.save_pipeline_data(
-                    "flood-forecast", self.flood_forecast_dataset
+                    data_type="flood-forecast", dataset=self.flood_forecast_dataset
                 )
             if send:
                 logging.info("send data to IBF API")
