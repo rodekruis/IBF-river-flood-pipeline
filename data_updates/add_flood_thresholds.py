@@ -13,15 +13,15 @@ from floodpipeline.data import TriggerThreshold, TriggerThresholdDataUnit, BaseD
 import logging
 
 RETURN_PERIODS = [
-    "1.5",
-    "2.0",
-    "5.0",
-    "10.0",
-    "20.0",
-    "50.0",
-    "100.0",
-    "200.0",
-    "500.0",
+    1.5,
+    2.0,
+    5.0,
+    10.0,
+    20.0,
+    50.0,
+    100.0,
+    200.0,
+    500.0,
 ]
 secrets = Secrets()
 settings = Settings("config/config-template.yaml")
@@ -30,6 +30,7 @@ load = Load(settings=settings, secrets=secrets)
 
 def add_flood_thresholds():
     os.makedirs("data/updates", exist_ok=True)
+    upload_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
 
     # Download flood thresholds
     html_page = BeautifulSoup(
@@ -38,7 +39,7 @@ def add_flood_thresholds():
     )
     flood_thresholds_files = {}
     for rp in RETURN_PERIODS:
-        filename = f"flood_threshold_glofas_v4_rl_{rp}.nc"
+        filename = f"flood_threshold_glofas_v4_rl_{'{:.1f}'.format(rp)}.nc"
         filepath = os.path.join("data", "updates", filename)
         if not os.path.exists(filepath):
             print(f"Downloading {filename}")
@@ -47,13 +48,14 @@ def add_flood_thresholds():
             urllib.request.urlretrieve(url, filepath)
         flood_thresholds_files[rp] = filepath
 
-    # Calculate zonal statistics
+    # loop over countries
     for country_settings in settings.get_setting("countries"):
         country = country_settings["name"]
         if country != "UGA":
             continue
         ttdus = []
 
+        # calculate thresholds per admin division
         for adm_level in country_settings["admin-levels"]:
             print(f"Calculating thresholds for {country}, admin level {adm_level}")
             country_gdf = load.get_adm_boundaries(
@@ -88,14 +90,82 @@ def add_flood_thresholds():
                     ],
                 )
                 ttdus.append(ttdu)
-
-        ttds = BaseDataSet(
+        # save admin division thresholds to cosmos
+        trigger_threshold_data = BaseDataSet(
             country=country,
             timestamp=datetime.today(),
             adm_levels=country_settings["admin-levels"],
             data_units=ttdus,
         )
-        load.save_pipeline_data("trigger-threshold", ttds, replace_country=True)
+        load.save_pipeline_data(
+            "trigger-threshold", trigger_threshold_data, replace_country=True
+        )
+
+        # START: TO BE DEPRECATED
+        # calculate thresholds per GloFAS station
+        adm_level = country_settings["trigger-on-admin-level"]
+        lead_time = country_settings["trigger-on-lead-time"]
+        return_period = country_settings["trigger-on-return-period"]
+        # get mapping of GloFAS stations to admin divisions
+        adm_gdf = load.glofas_stations_to_adm_divisions(
+            country=country, adm_level=adm_level
+        )
+        # prepare payload with station data for point-data/dynamic
+        station_forecasts = {
+            "triggerLevel": [],
+        }
+        for ix, adm_div in adm_gdf.iterrows():
+            pcode = adm_div[f"adm{adm_level}_pcode"]
+            trigger_threshold_data_unit = trigger_threshold_data.get_data_unit(pcode)
+            station = adm_div["station"]
+            station_forecasts["triggerLevel"].append(
+                {
+                    "fid": station,
+                    "value": int(
+                        trigger_threshold_data_unit.get_threshold(return_period)[
+                            "threshold"
+                        ]
+                        or 0
+                    ),
+                }
+            )
+
+        # get exact thresholds for GloFAS stations based on its coordinate
+        # station_forecasts = {
+        #     "triggerLevel": [],
+        # }
+        # with rasterio.open(flood_thresholds_files[return_period]) as src:
+        #     for ix, station in adm_gdf.iterrows():
+        #         thresholds = []
+        #         for shiftx in [-0.01, 0.01]:
+        #             for shifty in [-0.01, 0.01]:
+        #                 coords = [
+        #                     (station["point"].x + shiftx, station["point"].y + shifty)
+        #                 ]
+        #                 threshold = float(
+        #                     [x[0] for x in src.sample(coords, indexes=1)][0]
+        #                 )
+        #                 thresholds.append(threshold)
+        #         station_forecasts["triggerLevel"].append(
+        #             {
+        #                 "fid": station["station"],
+        #                 "value": max(thresholds),
+        #             }
+        #         )
+        # print(station_forecasts)
+
+        # save station thresholds to IBF API
+        for indicator in station_forecasts.keys():
+            body = {
+                "leadTime": f"{lead_time}-day",
+                "key": indicator,
+                "dynamicPointData": station_forecasts[indicator],
+                "pointDataCategory": "glofas_stations",
+                "disasterType": "floods",
+                "date": upload_time,
+            }
+            load.ibf_api_post_request("point-data/dynamic", body=body)
+        # END: TO BE DEPRECATED
 
 
 if __name__ == "__main__":

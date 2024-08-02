@@ -18,7 +18,8 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import requests
 import geopandas as gpd
-from typing import List
+from shapely import Point
+import numpy as np
 from azure.storage.blob import BlobServiceClient
 
 COSMOS_DATA_TYPES = ["river-discharge", "flood-forecast", "trigger-threshold"]
@@ -58,6 +59,20 @@ def get_data_unit_id(data_unit: BaseDataUnit, dataset: BaseDataSet):
     else:
         id_ = f"{data_unit.pcode}_{dataset.timestamp.strftime('%Y-%m-%dT%H:%M:%S')}"
     return id_
+
+
+def alert_class_to_threshold(alert_class: str) -> float:
+    """Convert alert class to 'alert_threshold'"""
+    if alert_class == "no":
+        return 0.0
+    elif alert_class == "min":
+        return 0.3
+    elif alert_class == "med":
+        return 0.7
+    elif alert_class == "max":
+        return 1.0
+    else:
+        raise ValueError(f"Invalid alert class {alert_class}")
 
 
 class Load:
@@ -139,7 +154,7 @@ class Load:
         )
         return login_response.json()["user"]["token"]
 
-    def __ibf_api_post_request(self, path, body=None, files=None):
+    def ibf_api_post_request(self, path, body=None, files=None):
         token = self.__ibf_api_authenticate()
         if body is not None:
             headers = {
@@ -163,12 +178,65 @@ class Load:
             headers=headers,
         )
         if r.status_code >= 400:
-            # logger.info(r.text)
-            # logger.error("PIPELINE ERROR")
-            raise ValueError()
+            raise ValueError(
+                f"Error in IBF API POST request: {r.status_code}, {r.text}"
+            )
+
+    def ibf_api_get_request(self, path, parameters=None):
+        token = self.__ibf_api_authenticate()
+        headers = {
+            "Authorization": "Bearer " + token,
+            "Accept": "*/*",
+        }
+        session = requests.Session()
+        retry = Retry(connect=3, backoff_factor=0.5)
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        r = session.get(
+            self.secrets.get_secret("IBF_API_URL") + path,
+            headers=headers,
+            params=parameters,
+        )
+        if r.status_code >= 400:
+            raise ValueError(f"Error in IBF API GET request: {r.status_code}, {r.text}")
+        return r.json()
+
+    def glofas_stations_to_adm_divisions(
+        self, country: str, adm_level: int
+    ) -> gpd.GeoDataFrame:
+        """Map GloFAS stations to administrative divisions
+        returns a GeoDataFrame with columns 'geometry', 'adm{adm_level}_pcode', 'station', 'point'
+        """
+        stations = self.ibf_api_get_request(
+            f"glofas-stations/{country}",
+        )
+        gdf_dict = {"code": [], "geometry": []}
+        for station in stations:
+            gdf_dict["code"].append(station["stationCode"])
+            gdf_dict["geometry"].append(Point(station["lon"], station["lat"]))
+        gdf = gpd.GeoDataFrame(gdf_dict, crs="EPSG:4326")
+        adm_gdf = self.get_adm_boundaries(country=country, adm_level=adm_level)
+        adm_gdf["station"], adm_gdf["point"] = None, None
+        for ix, station in gdf.iterrows():
+            adm_gdf["station"] = np.where(
+                adm_gdf.geometry.contains(station["geometry"]),
+                station["code"],
+                adm_gdf["station"],
+            )
+            adm_gdf["point"] = np.where(
+                adm_gdf.geometry.contains(station["geometry"]),
+                station["geometry"],
+                adm_gdf["point"],
+            )
+        adm_gdf.dropna(inplace=True)
+        return adm_gdf
 
     def send_to_ibf_api(
-        self, flood_forecast_data: BaseDataSet, flood_extent: str = None
+        self,
+        flood_forecast_data: BaseDataSet,
+        river_discharge_data: BaseDataSet,
+        flood_extent: str = None,
     ):
         """Send flood forecast data to IBF API"""
         upload_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -181,7 +249,7 @@ class Load:
                 du = flood_forecast_data.get_data_unit(pcode, lead_time)
                 if du.triggered:
                     is_trigger = True
-                if du.alert_class > 0:
+                if du.alert_class != "no":
                     is_alert = True
             triggers_per_lead_time.append(
                 {
@@ -196,47 +264,89 @@ class Load:
             "disasterType": "floods",
             "date": upload_time,
         }
-        self.__ibf_api_post_request("event/triggers-per-leadtime", body=body)
+        self.ibf_api_post_request("event/triggers-per-leadtime", body=body)
 
+        # START: TO BE DEPRECATED
         # point-data/dynamic - trigger and threshold per GloFAS station
-        # TBI
+        country = flood_forecast_data.country
+        adm_level = self.settings.get_country_setting(country, "trigger-on-admin-level")
+        lead_time = self.settings.get_country_setting(country, "trigger-on-lead-time")
+        # get mapping of GloFAS stations to admin divisions
+        adm_gdf = self.glofas_stations_to_adm_divisions(
+            country=country, adm_level=adm_level
+        )
+        # prepare payload with station data for point-data/dynamic
+        station_forecasts = {
+            "forecastLevel": [],
+            "eapAlertClass": [],
+            "forecastReturnPeriod": [],
+        }
+        for ix, adm_div in adm_gdf.iterrows():
+            pcode = adm_div[f"adm{adm_level}_pcode"]
+            station = adm_div["station"]
+            flood_forecast_data_unit = flood_forecast_data.get_data_unit(
+                pcode, lead_time
+            )
+            river_discharge_data_unit = river_discharge_data.get_data_unit(
+                pcode, lead_time
+            )
+            for indicator in station_forecasts.keys():
+                value = None
+                if indicator == "forecastLevel":
+                    value = int(river_discharge_data_unit.river_discharge_mean or 0)
+                elif indicator == "eapAlertClass":
+                    value = flood_forecast_data_unit.alert_class
+                elif indicator == "forecastReturnPeriod":
+                    value = flood_forecast_data_unit.return_period
+                station_data = {"fid": station, "value": value}
+                station_forecasts[indicator].append(station_data)
+        for indicator in station_forecasts.keys():
+            body = {
+                "leadTime": f"{lead_time}-day",
+                "key": indicator,
+                "dynamicPointData": station_forecasts[indicator],
+                "pointDataCategory": "glofas_stations",
+                "disasterType": "floods",
+                "date": upload_time,
+            }
+            self.ibf_api_post_request("point-data/dynamic", body=body)
+        # END: TO BE DEPRECATED
 
         # admin-area-dynamic-data/exposure - exposure data
-        for indicator in [
+        indicators = [
             "population_affected",
             "population_affected_percentage",
             "alert_threshold",
-        ]:
-            for lead_time in flood_forecast_data.get_lead_times():
-                for adm_lvl in flood_forecast_data.adm_levels:
-                    exposure_pcodes = []
-                    for pcode in flood_forecast_data.get_pcodes(adm_level=adm_lvl):
-                        du = flood_forecast_data.get_data_unit(pcode, lead_time)
-                        exposure_pcodes.append(
-                            {
-                                "placeCode": pcode,
-                                "amount": getattr(du, indicator),
-                            }
-                        )
-                    body = {
-                        "countryCodeISO3": flood_forecast_data.country,
-                        "leadTime": f"{lead_time}-day",
-                        "dynamicIndicator": indicator,
-                        "adminLevel": adm_lvl,
-                        "exposurePlaceCodes": exposure_pcodes,
-                        "disasterType": "floods",
-                        "date": upload_time,
-                    }
-                    self.__ibf_api_post_request(
-                        "event/triggers-per-leadtime", body=body
-                    )
+        ]
+        for indicator in indicators:
+            exposure_pcodes = []
+            for pcode in flood_forecast_data.get_pcodes(adm_level=adm_level):
+                du = flood_forecast_data.get_data_unit(pcode, lead_time)
+                amount = None
+                if indicator == "population_affected":
+                    amount = du.pop_affected
+                elif indicator == "population_affected_percentage":
+                    amount = du.pop_affected_perc
+                elif indicator == "alert_threshold":
+                    amount = alert_class_to_threshold(du.alert_class)
+                exposure_pcodes.append({"placeCode": pcode, "amount": amount})
+            body = {
+                "countryCodeISO3": flood_forecast_data.country,
+                "leadTime": f"{lead_time}-day",
+                "dynamicIndicator": indicator,
+                "adminLevel": adm_level,
+                "exposurePlaceCodes": exposure_pcodes,
+                "disasterType": "floods",
+                "date": upload_time,
+            }
+            self.ibf_api_post_request("admin-area-dynamic-data/exposure", body=body)
 
         # admin-area-dynamic-data/raster/floods - flood extent raster
         if flood_extent is not None:
             if not os.path.exists(flood_extent):
                 raise FileNotFoundError(f"Flood extent raster {flood_extent} not found")
             files = {"file": open(flood_extent, "rb")}
-            self.__ibf_api_post_request(
+            self.ibf_api_post_request(
                 "admin-area-dynamic-data/raster/floods", files=files
             )
 
@@ -249,6 +359,26 @@ class Load:
                 f"Data type {data_type} is not supported."
                 f"Supported storages are {', '.join(COSMOS_DATA_TYPES)}"
             )
+        # check data types
+        if data_type == "river-discharge":
+            for data_unit in dataset.data_units:
+                if not isinstance(data_unit, RiverDischargeDataUnit):
+                    raise ValueError(
+                        f"Data unit {data_unit} is not of type RiverDischargeDataUnit"
+                    )
+        elif data_type == "flood-forecast":
+            for data_unit in dataset.data_units:
+                if not isinstance(data_unit, FloodForecastDataUnit):
+                    raise ValueError(
+                        f"Data unit {data_unit} is not of type FloodForecastDataUnit"
+                    )
+        elif data_type == "trigger-threshold":
+            for data_unit in dataset.data_units:
+                if not isinstance(data_unit, TriggerThresholdDataUnit):
+                    raise ValueError(
+                        f"Data unit {data_unit} is not of type TriggerThresholdDataUnit"
+                    )
+
         client_ = cosmos_client.CosmosClient(
             self.secrets.get_secret("COSMOS_URL"),
             {"masterKey": self.secrets.get_secret("COSMOS_KEY")},
@@ -323,6 +453,7 @@ class Load:
                                 adm_level=record["adm_level"],
                                 pcode=record["pcode"],
                                 lead_time=record["lead_time"],
+                                river_discharge_mean=record["river_discharge_mean"],
                                 river_discharge_ensemble=record[
                                     "river_discharge_ensemble"
                                 ],
@@ -358,18 +489,17 @@ class Load:
                     data_units=data_units,
                 )
                 datasets.append(dataset)
-        if len(datasets) > 1:
-            raise KeyError(
-                f"Multiple datasets of type '{data_type}' found for country {country} in date range "
-                f"{start_date}-{end_date}; restrict the query."
-            )
-        elif len(datasets) == 0:
+        if len(datasets) == 0:
             raise KeyError(
                 f"No datasets of type '{data_type}' found for country {country} in date range "
                 f"{start_date}-{end_date}."
             )
-        else:
-            return datasets[0]
+        elif len(datasets) > 1:
+            logging.warning(
+                f"Multiple datasets of type '{data_type}' found for country {country} in date range "
+                f"{start_date}-{end_date}; returning the latest (timestamp {datasets[-1].timestamp}). "
+            )
+        return datasets[-1]
 
     def __get_blob_service_client(self, blob_path: str):
         blob_service_client = BlobServiceClient.from_connection_string(

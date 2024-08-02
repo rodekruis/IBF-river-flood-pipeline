@@ -16,8 +16,15 @@ class RiverDischargeDataUnit(BaseDataUnit):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.lead_time = kwargs.get("lead_time")
+        self.river_discharge_mean: float = kwargs.get("river_discharge_mean", None)
         self.river_discharge_ensemble: List[float] = kwargs.get(
             "river_discharge_ensemble", None
+        )
+
+    def compute_mean(self):
+        """Compute mean river discharge"""
+        self.river_discharge_mean = sum(self.river_discharge_ensemble) / len(
+            self.river_discharge_ensemble
         )
 
 
@@ -42,23 +49,6 @@ class FloodForecastDataUnit(BaseDataUnit):
         self.return_period: float = kwargs.get("return_period", None)  # return period
         self.alert_class: float = kwargs.get("alert_class", None)  # alert class [0, 1]
         # END: TO BE DEPRECATED
-
-    # START: TO BE DEPRECATED
-
-    # aliases for the IBF API
-    @property
-    def population_affected(self) -> int:
-        return self.pop_affected
-
-    @property
-    def population_affected_percentage(self) -> float:
-        return self.pop_affected_perc
-
-    @property
-    def alert_threshold(self) -> float:
-        return self.alert_class
-
-    # END: TO BE DEPRECATED
 
 
 # START: TO BE DEPRECATED
@@ -118,7 +108,7 @@ class BaseDataSet:
         country: str = None,
         timestamp: datetime = datetime.now(),
         adm_levels: List[int] = None,
-        data_units: List[BaseDataUnit] = [],
+        data_units: List[BaseDataUnit] = None,
     ):
         self.country = country
         self.timestamp = timestamp
@@ -142,6 +132,8 @@ class BaseDataSet:
 
     def get_data_unit(self, pcode: str, lead_time: int = None) -> BaseDataUnit:
         """Get data unit by pcode and optionally by lead time"""
+        if not self.data_units:
+            raise ValueError("Data units not found")
         if lead_time:
             bdu = next(
                 filter(
@@ -164,6 +156,8 @@ class BaseDataSet:
 
     def upsert_data_unit(self, data_unit: BaseDataUnit):
         """Add data unit; if it already exists, update it"""
+        if not self.data_units:
+            self.data_units = [data_unit]
         if hasattr(data_unit, "lead_time"):
             bdu = next(
                 filter(

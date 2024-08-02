@@ -20,6 +20,7 @@ countries:
       - 1
       - 2
     trigger-on-admin-level: 2
+    trigger-on-lead-time: 5
     trigger-on-return-period: 5
     trigger-on-minimum-probability: 0.6
     alert-on-return-period:

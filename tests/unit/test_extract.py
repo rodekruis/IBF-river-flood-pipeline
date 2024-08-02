@@ -2,17 +2,20 @@ import os.path
 from datetime import datetime, timedelta
 from floodpipeline.pipeline import Pipeline
 from floodpipeline.secrets import Secrets
+from floodpipeline.settings import Settings
 from floodpipeline.data import BaseDataSet, RiverDischargeDataUnit
 
-if not os.path.exists("credentials/.env"):
-    print('credentials not found, run this test from root directory')
-pipe = Pipeline(secrets=Secrets("credentials/.env"))
+if not os.path.exists(".env"):
+    raise FileNotFoundError("credentials not found, run this test from root directory")
+pipe = Pipeline(
+    secrets=Secrets(".env"), settings=Settings("config/config-template.yaml")
+)
 
-# flood_data = pipe.extract.get_data(source="GloFAS", country="UGA", adm_levels=[1])
-# for data_unit in flood_data.data_units:
-#     print(vars(data_unit))
+flood_data = pipe.extract.get_data(source="GloFAS", country="UGA")
+for data_unit in flood_data.data_units:
+    print(vars(data_unit))
 
-gdf = pipe.load.get_adm_boundaries(country="PHL", adm_level=1)
+# gdf = pipe.load.get_adm_boundaries(country="PHL", adm_level=1)
 
 
 # dataset = BaseDataSet(country="UGA", datetime=datetime.today(), adm_levels=[1])
@@ -32,5 +35,3 @@ gdf = pipe.load.get_adm_boundaries(country="PHL", adm_level=1)
 #
 # data_unit = dataset.get_data_unit(pcode="river_forecast", lead_time=1)
 # print(vars(data_unit))
-
-
