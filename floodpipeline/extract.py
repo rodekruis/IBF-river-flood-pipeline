@@ -142,9 +142,9 @@ class Extract:
                 country=self.country, adm_level=adm_level
             )
             for filename in netcdf_files:
-                for lead_time in range(0, 7):
+                for lead_time in range(0, 8):
                     with rasterio.open(filename) as src:
-                        raster_array = src.read(lead_time + 1)
+                        raster_array = src.read(lead_time)
                         transform = src.transform
                     # Perform zonal statistics
                     stats = zonal_stats(

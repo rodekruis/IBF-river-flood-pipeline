@@ -15,7 +15,7 @@ class RiverDischargeDataUnit(BaseDataUnit):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.lead_time = kwargs.get("lead_time")
+        self.lead_time: int = kwargs.get("lead_time")
         self.river_discharge_mean: float = kwargs.get("river_discharge_mean", None)
         self.river_discharge_ensemble: List[float] = kwargs.get(
             "river_discharge_ensemble", None
@@ -38,7 +38,7 @@ class FloodForecastDataUnit(BaseDataUnit):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.lead_time = kwargs.get("lead_time")
+        self.lead_time: int = kwargs.get("lead_time")
         self.flood_forecasts: List[FloodForecast] = kwargs.get("flood_forecasts", None)
         self.pop_affected: int = kwargs.get("pop_affected", 0)  # population affected
         self.pop_affected_perc: float = kwargs.get(
@@ -47,7 +47,7 @@ class FloodForecastDataUnit(BaseDataUnit):
         # START: TO BE DEPRECATED
         self.triggered: bool = kwargs.get("triggered", None)  # triggered or not
         self.return_period: float = kwargs.get("return_period", None)  # return period
-        self.alert_class: float = kwargs.get("alert_class", None)  # alert class [0, 1]
+        self.alert_class: str = kwargs.get("alert_class", None)  # alert class
         # END: TO BE DEPRECATED
 
 
@@ -55,7 +55,7 @@ class FloodForecastDataUnit(BaseDataUnit):
 class GloFASStationFloodForecastDataUnit(BaseDataUnit):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.lead_time = kwargs.get("lead_time")
+        self.lead_time: int = kwargs.get("lead_time")
         self.likelihood: float = kwargs.get(
             "likelihood", None
         )  # probablity of occurrence [0, 1]
@@ -67,7 +67,7 @@ class GloFASStationFloodForecastDataUnit(BaseDataUnit):
         self.return_period: float = kwargs.get(
             "return_period", None
         )  # return period in years
-        self.alert_class: float = kwargs.get("alert_class", None)  # alert class [0, 1]
+        self.alert_class: str = kwargs.get("alert_class", None)  # alert class
 
 
 # END: TO BE DEPRECATED
@@ -129,6 +129,12 @@ class BaseDataSet:
         return list(
             set([x.lead_time for x in self.data_units if hasattr(x, "lead_time")])
         )
+
+    def get_data_units_lead_time(self, lead_time: int = None):
+        """Return list of data units by lead time"""
+        if not self.data_units:
+            raise ValueError("Data units not found")
+        return list(filter(lambda x: x.lead_time == lead_time, self.data_units))
 
     def get_data_unit(self, pcode: str, lead_time: int = None) -> BaseDataUnit:
         """Get data unit by pcode and optionally by lead time"""

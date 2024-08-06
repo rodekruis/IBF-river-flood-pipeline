@@ -8,6 +8,7 @@
 credentials/.env
 !credentials/.env-example
 *.env
+logs/
 
 # Generated files
 dist

@@ -141,11 +141,11 @@ class Forecast:
             river_discharges.get_lead_times(), river_discharges.get_pcodes()
         ):
             river_discharge_data_unit = river_discharges.get_data_unit(pcode, lead_time)
-            trigger_threshold_du_data_unit = trigger_thresholds.get_data_unit(pcode)
+            trigger_threshold_data_unit = trigger_thresholds.get_data_unit(pcode)
             adm_level = river_discharge_data_unit.adm_level
 
             likelihood_per_return_period, flood_forecasts = {}, []
-            for trigger_threshold in trigger_threshold_du_data_unit.trigger_thresholds:
+            for trigger_threshold in trigger_threshold_data_unit.trigger_thresholds:
                 threshold_checks = map(
                     lambda x: 1 if x > trigger_threshold["threshold"] else 0,
                     river_discharge_data_unit.river_discharge_ensemble,
