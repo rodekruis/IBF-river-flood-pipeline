@@ -9,8 +9,16 @@ from rasterstats import zonal_stats
 from floodpipeline.load import Load
 from floodpipeline.settings import Settings
 from floodpipeline.secrets import Secrets
-from floodpipeline.data import TriggerThreshold, TriggerThresholdDataUnit, BaseDataSet
-import logging
+from floodpipeline.data import (
+    Threshold,
+    ThresholdDataUnit,
+    ThresholdStationDataUnit,
+    StationDataSet,
+    AdminDataSet,
+)
+from shapely import Point
+import geopandas as gpd
+from shapely.ops import linemerge
 
 RETURN_PERIODS = [
     1.5,
@@ -79,92 +87,141 @@ def add_flood_thresholds():
                 )
                 country_gdf = pd.concat([country_gdf, df], axis=1)
             for ix, row in country_gdf.iterrows():
-                ttdu = TriggerThresholdDataUnit(
+                ttdu = ThresholdDataUnit(
                     adm_level=int(adm_level),
                     pcode=row[f"adm{adm_level}_pcode"],
-                    trigger_thresholds=[
-                        TriggerThreshold(
-                            return_period=float(rp), threshold=row[f"max_{rp}"]
+                    thresholds=[
+                        Threshold(
+                            return_period=float(rp), threshold_value=row[f"max_{rp}"]
                         )
                         for rp in RETURN_PERIODS
                     ],
                 )
                 ttdus.append(ttdu)
         # save admin division thresholds to cosmos
-        trigger_threshold_data = BaseDataSet(
+        threshold_data = AdminDataSet(
             country=country,
             timestamp=datetime.today(),
             adm_levels=country_settings["admin-levels"],
             data_units=ttdus,
         )
-        load.save_pipeline_data(
-            "trigger-threshold", trigger_threshold_data, replace_country=True
-        )
+        load.save_pipeline_data("threshold", threshold_data, replace_country=True)
 
         # START: TO BE DEPRECATED
-        # calculate thresholds per GloFAS station
-        adm_level = country_settings["trigger-on-admin-level"]
-        lead_time = country_settings["trigger-on-lead-time"]
-        return_period = country_settings["trigger-on-return-period"]
-        # get mapping of GloFAS stations to admin divisions
-        adm_gdf = load.glofas_stations_to_adm_divisions(
-            country=country, adm_level=adm_level
+        print(f"Calculating station thresholds for {country}")
+        # extract thresholds for GloFAS stations based on their coordinates
+        stations = load.ibf_api_get_request(
+            f"glofas-stations/{country}",
         )
-        # prepare payload with station data for point-data/dynamic
-        station_forecasts = {
-            "triggerLevel": [],
-        }
-        for ix, adm_div in adm_gdf.iterrows():
-            pcode = adm_div[f"adm{adm_level}_pcode"]
-            trigger_threshold_data_unit = trigger_threshold_data.get_data_unit(pcode)
-            station = adm_div["station"]
-            station_forecasts["triggerLevel"].append(
-                {
-                    "fid": station,
-                    "value": int(
-                        trigger_threshold_data_unit.get_threshold(return_period)[
-                            "threshold"
-                        ]
-                        or 0
-                    ),
-                }
-            )
+        threshold_stations = {}
+        for rp, filename in flood_thresholds_files.items():
+            with rasterio.open(filename) as src:
+                for station in stations:
+                    discharges = []
+                    for shiftx in [-0.01, 0.01]:
+                        for shifty in [-0.01, 0.01]:
+                            coords = [
+                                (
+                                    float(station["lon"]) + shiftx,
+                                    float(station["lat"]) + shifty,
+                                )
+                            ]
+                            discharge = float(
+                                [x[0] for x in src.sample(coords, indexes=1)][0]
+                            )
+                            discharges.append(discharge)
+                    if station["stationCode"] not in threshold_stations.keys():
+                        threshold_stations[station["stationCode"]] = []
+                    threshold_stations[station["stationCode"]].append(
+                        Threshold(
+                            return_period=float(rp), threshold_value=max(discharges)
+                        )
+                    )
 
-        # get exact thresholds for GloFAS stations based on its coordinate
-        # station_forecasts = {
-        #     "triggerLevel": [],
-        # }
-        # with rasterio.open(flood_thresholds_files[return_period]) as src:
-        #     for ix, station in adm_gdf.iterrows():
-        #         thresholds = []
-        #         for shiftx in [-0.01, 0.01]:
-        #             for shifty in [-0.01, 0.01]:
-        #                 coords = [
-        #                     (station["point"].x + shiftx, station["point"].y + shifty)
-        #                 ]
-        #                 threshold = float(
-        #                     [x[0] for x in src.sample(coords, indexes=1)][0]
-        #                 )
-        #                 thresholds.append(threshold)
-        #         station_forecasts["triggerLevel"].append(
-        #             {
-        #                 "fid": station["station"],
-        #                 "value": max(thresholds),
-        #             }
-        #         )
-        # print(station_forecasts)
+        print(f"Determining pcodes associated to each station for country {country}")
+        pcodes_stations = {}
+        river_filepath = f"data/updates/rivers_{country}.gpkg"
+        lake_filepath = f"data/updates/HydroLAKES_polys_v10_big.gpkg"
+        river_union_filepath = f"data/updates/rivers_{country}_union.gpkg"
 
-        # save station thresholds to IBF API
-        for indicator in station_forecasts.keys():
-            body = {
-                "leadTime": f"{lead_time}-day",
-                "key": indicator,
-                "dynamicPointData": station_forecasts[indicator],
-                "pointDataCategory": "glofas_stations",
-                "disasterType": "floods",
-                "date": upload_time,
-            }
-            load.ibf_api_post_request("point-data/dynamic", body=body)
+        # first, get river closest to station
+        if not os.path.exists(river_union_filepath):
+            if not os.path.exists(river_filepath):
+                load.get_from_blob(
+                    river_filepath,
+                    f"flood/pipeline-input/rivers/rivers.gpkg",
+                )
+            gdf_rivers = gpd.read_file(river_filepath)
+            if not os.path.exists(lake_filepath):
+                load.get_from_blob(
+                    lake_filepath,
+                    f"flood/pipeline-input/lakes/HydroLAKES_polys_v10_big.gpkg",
+                )
+            gdf_lakes = gpd.read_file(lake_filepath)
+            gdf_rivers = gdf_rivers.overlay(gdf_lakes, how="difference")
+            gdf_rivers = gpd.GeoDataFrame(geometry=gdf_rivers.geometry.buffer(0.0001))
+            res_union = gdf_rivers.overlay(gdf_rivers, how="union")
+            gdf_rivers = res_union.dissolve().explode()
+            gdf_rivers.to_file(river_union_filepath, driver="GPKG")
+        else:
+            gdf_rivers = gpd.read_file(river_union_filepath)
+
+        gdf_dict = {"stationCode": [], "geometry": []}
+        for station in stations:
+            gdf_dict["stationCode"].append(station["stationCode"])
+            gdf_dict["geometry"].append(Point(station["lon"], station["lat"]))
+        gdf_stations = gpd.GeoDataFrame(gdf_dict, crs="EPSG:4326")
+        df_nearest = gpd.sjoin_nearest(gdf_stations, gdf_rivers).merge(
+            gdf_rivers, left_on="index_right", right_index=True
+        )
+        df_nearest["geometry"] = df_nearest["geometry_y"]
+        df_nearest = df_nearest.dissolve("stationCode")
+
+        # then get all admin divisions intersecting that river
+        # apply a buffer to rivers because many admin boundaries lie on top
+        station_river = gpd.GeoDataFrame(geometry=df_nearest["geometry_y"])
+        station_river["geometry"] = station_river["geometry"].buffer(0.01)
+        station_river.to_file(
+            f"data/updates/{country}_river_station_buffer.gpkg",
+            driver="GPKG",
+        )
+        for adm_level in country_settings["admin-levels"]:
+            adm_gdf = load.get_adm_boundaries(country=country, adm_level=adm_level)
+            for ix, station_river in df_nearest.iterrows():
+                adm_gdf_station = adm_gdf[
+                    station_river["geometry_y"].intersects(adm_gdf.geometry)
+                ]
+                pcodes = list(set(adm_gdf_station[f"adm{adm_level}_pcode"].to_list()))
+                if ix not in pcodes_stations.keys():
+                    pcodes_stations[ix] = pcodes
+                else:
+                    pcodes_stations[ix].extend(pcodes)
+
+                adm_gdf_station.to_file(
+                    f"data/updates/{country}_{ix}_{adm_level}.gpkg",
+                    driver="GPKG",
+                )
+
+        # save thresholds
+        threshold_station_data = StationDataSet(
+            country=country,
+            timestamp=datetime.today(),
+        )
+        for station in stations:
+            for lead_time in range(1, 8):
+                threshold_station_data.upsert_data_unit(
+                    ThresholdStationDataUnit(
+                        station_code=station["stationCode"],
+                        station_name=station["stationName"],
+                        lat=station["lat"],
+                        lon=station["lon"],
+                        pcodes=pcodes_stations[station["stationCode"]],
+                        thresholds=threshold_stations[station["stationCode"]],
+                    )
+                )
+        load.save_pipeline_data(
+            "threshold-station", threshold_station_data, replace_country=True
+        )
         # END: TO BE DEPRECATED
 
 

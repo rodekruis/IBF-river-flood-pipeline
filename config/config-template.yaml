@@ -1,10 +1,10 @@
 # configuration file for ibf flood pipeline
 
 floods:
-  glofas_ftp_server: aux.ecmwf.int/fc_netcdf
   global_flood_maps_url: https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/CEMS-GLOFAS/flood_hazard
-  no_ensemble_members: 1  # number of ensemble members to consider
+  no_ensemble_members: 2  # number of ensemble members to consider
   minimum_flood_depth: 0.5  # minimum flood depth considered when calculating affected population
+  blob_storage_path: flood/pipeline-input  # path to pipeline data in blob storage
 
 auxiliary:
   worldpop_url: https://data.worldpop.org/GIS/Population/Global_2021_2022_1km_UNadj/constrained/2022
@@ -17,9 +17,9 @@ databases:
 countries:
   - name: UGA
     admin-levels:
-      - 1
       - 2
-    trigger-on-admin-level: 2
+      - 3
+      - 4
     trigger-on-lead-time: 5
     trigger-on-return-period: 5
     trigger-on-minimum-probability: 0.6
@@ -29,15 +29,13 @@ countries:
       max: 5
     alert-on-minimum-probability: 0.6
 
-  - name: KEN
-    admin-levels:
-      - 1
-      - 2
-      - 3
-
-  - name: ETH
-    admin-levels:
-      - 1
-      - 2
-      - 3
+#  - name: KEN
+#    admin-levels:
+#      - 2
+#      - 3
+#
+#  - name: ETH
+#    admin-levels:
+#      - 2
+#      - 3
 

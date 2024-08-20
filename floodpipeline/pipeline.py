@@ -26,65 +26,100 @@ class Pipeline:
     def run_pipeline(
         self,
         country: str = None,
+        prepare: bool = True,
         extract: bool = True,
         forecast: bool = True,
         send: bool = True,
+        save: bool = False,
     ):
+        """Run the flood data pipeline"""
+
         countries = [c["name"] for c in self.settings.get_setting("countries")]
         if country is not None:
-            if country not in countries:
+            if country != "ALL" and country not in countries:
                 raise ValueError(f"Country {country} not found in settings")
             countries = [country]
-        """Run the flood data pipeline per country"""
+
+        if prepare:
+            logging.info("prepare discharge data for all countries")
+            self.extract.prepare_glofas_data(countries=countries)
+
+        if not extract and not forecast:
+            return
         for country in countries:
             if extract:
-                logging.info("get river discharge data")
-                river_discharge_dataset = self.extract.get_data(
-                    country=country, source="GloFAS"
+                logging.info(f"start {country}")
+                logging.info(f"extract discharge data")
+                discharge_dataset, discharge_station_dataset = (
+                    self.extract.extract_glofas_data(country=country)
                 )
-                logging.info("save river discharge data to storage")
-                self.load.save_pipeline_data(
-                    data_type="river-discharge",
-                    dataset=river_discharge_dataset,
-                    replace_country=True,
-                )
+                if save:
+                    logging.info("save discharge data to storage")
+                    self.load.save_pipeline_data(
+                        data_type="discharge", dataset=discharge_dataset
+                    )
+                    self.load.save_pipeline_data(
+                        data_type="discharge-station", dataset=discharge_station_dataset
+                    )
             else:
-                logging.info("get river discharge data from storage")
-                river_discharge_dataset = self.load.get_pipeline_data(
-                    data_type="river-discharge",
+                logging.info(f"get discharge data from storage")
+                discharge_dataset = self.load.get_pipeline_data(
+                    data_type="discharge",
+                    country=country,
+                    start_date=date.today(),
+                    end_date=date.today() + timedelta(days=1),
+                )
+                discharge_station_dataset = self.load.get_pipeline_data(
+                    data_type="discharge-station",
                     country=country,
                     start_date=date.today(),
                     end_date=date.today() + timedelta(days=1),
                 )
             if forecast:
-                logging.info("get trigger thresholds from storage")
-                trigger_thresholds_dataset = self.load.get_pipeline_data(
-                    data_type="trigger-threshold", country=country
+                logging.info("get thresholds from storage")
+                thresholds_dataset = self.load.get_pipeline_data(
+                    data_type="threshold", country=country
+                )
+                thresholds_station_dataset = self.load.get_pipeline_data(
+                    data_type="threshold-station", country=country
                 )
                 logging.info("forecast floods")
-                flood_forecast_dataset = self.forecast.forecast(
-                    river_discharges=river_discharge_dataset,
-                    trigger_thresholds=trigger_thresholds_dataset,
+                forecast_dataset = self.forecast.forecast(
+                    discharge_dataset=discharge_dataset,
+                    threshold_dataset=thresholds_dataset,
+                )
+                forecast_station_dataset = self.forecast.forecast_station(
+                    discharge_dataset=discharge_station_dataset,
+                    threshold_dataset=thresholds_station_dataset,
                 )
                 logging.info("save flood forecasts to storage")
-                self.load.save_pipeline_data(
-                    data_type="flood-forecast",
-                    dataset=flood_forecast_dataset,
-                    replace_country=True,
-                )
+                if save:
+                    self.load.save_pipeline_data(
+                        data_type="forecast", dataset=forecast_dataset
+                    )
+                    self.load.save_pipeline_data(
+                        data_type="forecast-station", dataset=forecast_dataset
+                    )
             else:
                 logging.info("get flood forecasts from storage")
-                flood_forecast_dataset = self.load.get_pipeline_data(
-                    data_type="flood-forecast",
+                forecast_dataset = self.load.get_pipeline_data(
+                    data_type="forecast",
                     country=country,
                     start_date=date.today(),
                     end_date=date.today() + timedelta(days=1),
                 )
-
+                forecast_station_dataset = self.load.get_pipeline_data(
+                    data_type="forecast",
+                    country=country,
+                    start_date=date.today(),
+                    end_date=date.today() + timedelta(days=1),
+                )
             if send:
                 logging.info("send data to IBF API")
                 self.load.send_to_ibf_api(
-                    flood_forecast_data=flood_forecast_dataset,
-                    river_discharge_data=river_discharge_dataset,
+                    forecast_data=forecast_dataset,
+                    discharge_data=discharge_dataset,
+                    forecast_station_data=forecast_station_dataset,
+                    discharge_station_data=discharge_station_dataset,
                     flood_extent=self.forecast.flood_extent_filepath,
                 )

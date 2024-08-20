@@ -1,6 +1,11 @@
 from floodpipeline.secrets import Secrets
 from floodpipeline.settings import Settings
-from floodpipeline.data import BaseDataSet, RiverDischargeDataUnit
+from floodpipeline.data import (
+    AdminDataSet,
+    DischargeDataUnit,
+    StationDataSet,
+    DischargeStationDataUnit,
+)
 from floodpipeline.load import Load
 import os
 from datetime import datetime, timedelta
@@ -87,66 +92,63 @@ class Extract:
             raise ValueError(f"Set secrets before setting source")
         return self
 
-    def get_data(self, country: str, source: str = None) -> BaseDataSet:
-        """Get river discharge data from source and return BaseDataSet"""
+    def get_data(self, country: str, source: str = None) -> AdminDataSet:
+        """Get river discharge data from source and return AdminDataSet"""
         if source is None and self.source is None:
             raise RuntimeError("Source not specified, use set_source()")
         elif self.source is None and source is not None:
             self.source = source
         self.country = country
-        river_discharge_dataset = None
+        discharge_dataset, discharge_station_dataset = None, None
         if self.source == "GloFAS":
             logging.info("get GloFAS data")
-            river_discharge_dataset = self.__download_extract_glofas_data()
-        return river_discharge_dataset
+            self.prepare_glofas_data(countries=[self.country])
+            discharge_dataset, discharge_station_dataset = self.extract_glofas_data(
+                self.country
+            )
+        return discharge_dataset, discharge_station_dataset
 
-    def __download_extract_glofas_data(self) -> BaseDataSet:
-        """Download GloFAS data for each ensemble member and map to BaseDataSet"""
-
-        river_discharge_dataset = BaseDataSet(
+    def extract_glofas_data(self, country: str):
+        """Download GloFAS data for each ensemble member and map to AdminDataSet"""
+        self.country = country
+        discharge_dataset = AdminDataSet(
             country=self.country,
             timestamp=datetime.today(),
             adm_levels=self.settings.get_country_setting(self.country, "admin-levels"),
         )
 
-        # Download NetCDF files for each ensemble member
-        downloadDone = False
-        timeToTryDownload = 43200
-        timeToRetry = 6
-        start = time.time()
-        end = start + timeToTryDownload
-        netcdf_files = []
-        while not downloadDone and time.time() < end:
-            try:
-                netcdf_files = self.__download_and_clip_glofas_data()
-                downloadDone = True
-            except Exception as e:
-                error = (
-                    f"Download data failed: {e}. Will be trying again in "
-                    + str(timeToRetry / 60)
-                    + " minutes."
-                )
-                logging.error(error)
-                time.sleep(timeToRetry)
-        if not downloadDone:
-            raise ValueError(
-                "GLofas download failed for "
-                + str(timeToTryDownload / 3600)
-                + " hours, no new dataset was found"
+        discharge_station_dataset = self.load.get_stations(country=self.country)
+
+        # Download pre-processed NetCDF files for each ensemble member
+        nofEns = self.settings.get_setting("no_ensemble_members")
+        blob_path = self.settings.get_setting("blob_storage_path")
+        date = datetime.today().strftime("%Y%m%d")
+        filenames = [
+            f"GloFAS_{date}_{self.country}_{ensemble}.nc"
+            for ensemble in range(0, nofEns)
+        ]
+        netcdf_files_local_path = []
+        for filename in filenames:
+            local_path = os.path.join(self.inputPathGrid, filename)
+            self.load.get_from_blob(
+                local_path,
+                f"{blob_path}/glofas-data/{date}/{self.country}/{filename}",
             )
+            netcdf_files_local_path.append(local_path)
 
         # Extract data from NetCDF files
-        logging.info("Extract zonal statistics from GloFAS data")
-        for adm_level in river_discharge_dataset.adm_levels:
+        logging.info("Extract admin-level river discharge from GloFAS data")
+        discharges = {}
+        for adm_level in discharge_dataset.adm_levels:
             country_gdf = self.load.get_adm_boundaries(
                 country=self.country, adm_level=adm_level
             )
-            for filename in netcdf_files:
-                for lead_time in range(0, 8):
+            for filename in netcdf_files_local_path:
+                for lead_time in range(1, 8):
                     with rasterio.open(filename) as src:
                         raster_array = src.read(lead_time)
                         transform = src.transform
-                    # Perform zonal statistics
+                    # Perform zonal statistics for admin divisions
                     stats = zonal_stats(
                         country_gdf,
                         raster_array,
@@ -157,93 +159,107 @@ class Extract:
                     )
                     dis = pd.concat([country_gdf, pd.DataFrame(stats)], axis=1)
                     for ix, row in dis.iterrows():
-                        try:
-                            rddu = river_discharge_dataset.get_data_unit(
-                                row[f"adm{adm_level}_pcode"], lead_time
-                            )
-                            rddu.river_discharge_ensemble.append(row["max"])
-                            river_discharge_dataset.upsert_data_unit(rddu)
-                        except ValueError:
-                            river_discharge_dataset.upsert_data_unit(
-                                RiverDischargeDataUnit(
-                                    adm_level=adm_level,
-                                    pcode=row[f"adm{adm_level}_pcode"],
-                                    lead_time=lead_time,
-                                    river_discharge_ensemble=[row["max"]],
-                                )
-                            )
+                        key = f'{row[f"adm{adm_level}_pcode"]}_{lead_time}'
+                        if key not in discharges.keys():
+                            discharges[key] = []
+                        discharges[key].append(row["max"])
 
-            # Calculate average river discharge for each lead time
             for lead_time, pcode in itertools.product(
-                river_discharge_dataset.get_lead_times(),
-                river_discharge_dataset.get_pcodes(),
+                range(1, 8), list(country_gdf[f"adm{adm_level}_pcode"].unique())
             ):
-                river_discharge_dataset.get_data_unit(pcode, lead_time).compute_mean()
+                key = f"{pcode}_{lead_time}"
+                discharge_dataset.upsert_data_unit(
+                    DischargeDataUnit(
+                        adm_level=adm_level,
+                        pcode=pcode,
+                        lead_time=lead_time,
+                        discharge_ensemble=discharges[key],
+                    )
+                )
 
-        return river_discharge_dataset
+        logging.info("Extract station-level river discharge from GloFAS data")
+        discharges_stations = {}
+        for filename in netcdf_files_local_path:
+            with rasterio.open(filename) as src:
+                for station in discharge_station_dataset.data_units:
+                    lead_time = int(station.lead_time)
+                    # Extract data for stations
+                    discharges = []
+                    for shiftx in [-0.01, 0.01]:
+                        for shifty in [-0.01, 0.01]:
+                            coords = [
+                                (
+                                    float(station.lon) + shiftx,
+                                    float(station.lat) + shifty,
+                                )
+                            ]
+                            discharge = float(
+                                [x[0] for x in src.sample(coords, indexes=lead_time)][0]
+                            )
+                            discharges.append(discharge)
+                    key = f"{station.station_code}_{lead_time}"
+                    if key not in discharges_stations.keys():
+                        discharges_stations[key] = []
+                    discharges_stations[key].append(max(discharges))
 
-    def __get_ftp_path(self, date: str) -> str:
-        """Get the FTP path for GloFAS data"""
-        glofas_ftp_dir = f'{self.settings.get_setting("glofas_ftp_server")}/{date}/'
-        ftp_path = (
-            "ftp://"
-            + self.secrets.get_secret("GLOFAS_USER")
-            + ":"
-            + self.secrets.get_secret("GLOFAS_PASSWORD")
-            + "@"
-            + glofas_ftp_dir
-        )
-        return ftp_path
+        for station in discharge_station_dataset.data_units:
+            key = f"{station.station_code}_{station.lead_time}"
+            discharge_station_dataset.upsert_data_unit(
+                DischargeStationDataUnit(
+                    station_code=station.station_code,
+                    station_name=station.station_name,
+                    lat=station.lat,
+                    lon=station.lon,
+                    pcodes=station.pcodes,
+                    lead_time=station.lead_time,
+                    discharge_ensemble=discharges_stations[key],
+                )
+            )
 
-    def __download_and_clip_glofas_data(self) -> List[str]:
+        return discharge_dataset, discharge_station_dataset
+
+    def prepare_glofas_data(self, countries: List[str] = None):
         """
-        Download one netcdf file per ensemble member and save it locally;
-        slice the data to the extent of country and save it locally;
-        return list of clipped files
+        Download one netcdf file per ensemble member;
+        for each country, slice the data to the extent of country and save it to storage
         """
-        logging.info(f"start downloading GloFAS data")
-        country_gdf = self.load.get_adm_boundaries(country=self.country, adm_level=1)
-        country_bounds = country_gdf.total_bounds
+        if countries is None:
+            countries = [c["name"] for c in self.settings.get_setting("countries")]
+        logging.info(f"start preparing GloFAS data for countries {countries}")
+        country_gdfs = {}
+        for country in countries:
+            country_gdfs[country] = self.load.get_adm_boundaries(
+                country=country, adm_level=1
+            )
         nofEns = self.settings.get_setting("no_ensemble_members")
-        ntecdf_files = []
-        # date = datetime.today().strftime("%Y%m%d")
-        date = (datetime.today() - timedelta(days=1)).strftime("%Y%m%d")
-
+        blob_path = self.settings.get_setting("blob_storage_path")
+        date = datetime.today().strftime("%Y%m%d")
         for ensemble in range(0, nofEns):
             # Download netcdf file
-            logging.info(f"start downloading GloFAS data for ensemble {ensemble}")
+            logging.info(f"start ensemble {ensemble}")
             filename_local = os.path.join(self.inputPathGrid, f"GloFAS_{ensemble}.nc")
-            filename_remote = f'dis_{"{:02d}".format(ensemble)}_{date}00.nc'
-            ftp_path = self.__get_ftp_path(date)
-            if not os.path.exists(filename_local):
-                max_retries, retries = 5, 0
-                while retries < max_retries:
-                    try:
-                        urllib.request.urlretrieve(
-                            ftp_path + filename_remote, filename_local
-                        )
-                        break  # Connection successful, exit the loop
-                    except ftplib.error_temp as e:
-                        if "421 Maximum number of connections exceeded" in str(e):
-                            retries += 1
-                            logging.info("Retrying FTP connection...")
-                            time.sleep(5)  # Wait for 5 seconds before retrying
-                        else:
-                            raise  # Reraise other FTP errors
-                else:
-                    logging.info(
-                        "Max retries reached. Unable to establish FTP connection."
-                    )
-            ntecdf_files.append(filename_local)
-            # Slice netcdf file to country boundaries
-            nc_file = xr.open_dataset(filename_local)
-            nc_file_sliced = slice_netcdf_file(nc_file, country_bounds)
-            filename_local_sliced = os.path.join(
-                self.inputPathGrid,
-                f"GloFAS_{ensemble}_{self.country}.nc",
+            self.load.get_from_blob(
+                filename_local,
+                f"{blob_path}/glofas-data/{date}/dis_{'{:02d}'.format(ensemble)}_{date}00.nc",
             )
-            nc_file_sliced.to_netcdf(filename_local_sliced)
+            nc_file = xr.open_dataset(filename_local)
+
+            # Slice netcdf file to country boundaries
+            for country in countries:
+                country_gdf = country_gdfs[country]
+                country_bounds = country_gdf.total_bounds
+                nc_file_sliced = slice_netcdf_file(nc_file, country_bounds)
+                filename_local_sliced = os.path.join(
+                    self.inputPathGrid,
+                    f"GloFAS_{date}_{country}_{ensemble}.nc",
+                )
+                nc_file_sliced.to_netcdf(filename_local_sliced)
+                self.load.save_to_blob(
+                    filename_local_sliced,
+                    f"{blob_path}/glofas-data/{date}/{country}/GloFAS_{date}_{country}_{ensemble}.nc",
+                )
+
             nc_file.close()
-            logging.info(f"finished downloading GloFAS data for ensemble {ensemble}")
-        logging.info("finished downloading GloFAS data")
-        return ntecdf_files
+            os.remove(filename_local)
+            logging.info(f"finished ensemble {ensemble}")
+        logging.info("finished preparing GloFAS data")

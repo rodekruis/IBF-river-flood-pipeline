@@ -2,29 +2,60 @@ from datetime import datetime
 from typing import List, TypedDict
 
 
-class BaseDataUnit:
-    """Base class for pipeline data units"""
+class AdminDataUnit:
+    """Base class for admin data units"""
 
     def __init__(self, **kwargs):
         self.adm_level: int = kwargs.get("adm_level")
         self.pcode: str = kwargs.get("pcode")
 
 
-class RiverDischargeDataUnit(BaseDataUnit):
+class StationDataUnit:
+    """Base class for station data units"""
+
+    def __init__(self, **kwargs):
+        self.station_code: str = kwargs.get("station_code")
+        self.station_name: str = kwargs.get("station_name")
+        self.lat: float = kwargs.get("lat")
+        self.lon: float = kwargs.get("lon")
+        self.pcodes: List[str] = kwargs.get(
+            "pcodes"
+        )  # pcodes of associated administrative divisions
+
+
+class DischargeDataUnit(AdminDataUnit):
     """River discharge data unit"""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.lead_time: int = kwargs.get("lead_time")
-        self.river_discharge_mean: float = kwargs.get("river_discharge_mean", None)
-        self.river_discharge_ensemble: List[float] = kwargs.get(
-            "river_discharge_ensemble", None
-        )
+        self.discharge_ensemble: List[float] = kwargs.get("discharge_ensemble", None)
+        self.discharge_mean: float = kwargs.get("discharge_mean", None)
+        if hasattr(self.discharge_ensemble, "__iter__"):
+            self.compute_mean()
 
     def compute_mean(self):
         """Compute mean river discharge"""
-        self.river_discharge_mean = sum(self.river_discharge_ensemble) / len(
-            self.river_discharge_ensemble
+        self.discharge_mean = sum(self.discharge_ensemble) / len(
+            self.discharge_ensemble
+        )
+
+
+class DischargeStationDataUnit(StationDataUnit):
+    """River discharge data unit - station"""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.lead_time: int = kwargs.get("lead_time")
+        self.discharge_ensemble: List[float] = kwargs.get("discharge_ensemble", None)
+        self.discharge_mean: float = kwargs.get("discharge_mean", None)
+        if hasattr(self.discharge_ensemble, "__iter__"):
+            self.compute_mean()
+
+    def compute_mean(self):
+        """Compute mean river discharge"""
+        self.discharge_mean = sum(self.discharge_ensemble) / len(
+            self.discharge_ensemble
         )
 
 
@@ -33,13 +64,13 @@ class FloodForecast(TypedDict):
     likelihood: float
 
 
-class FloodForecastDataUnit(BaseDataUnit):
+class ForecastDataUnit(AdminDataUnit):
     """Flood forecast data unit"""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.lead_time: int = kwargs.get("lead_time")
-        self.flood_forecasts: List[FloodForecast] = kwargs.get("flood_forecasts", None)
+        self.forecasts: List[FloodForecast] = kwargs.get("forecasts", None)
         self.pop_affected: int = kwargs.get("pop_affected", 0)  # population affected
         self.pop_affected_perc: float = kwargs.get(
             "pop_affected_perc", 0.0
@@ -51,64 +82,78 @@ class FloodForecastDataUnit(BaseDataUnit):
         # END: TO BE DEPRECATED
 
 
-# START: TO BE DEPRECATED
-class GloFASStationFloodForecastDataUnit(BaseDataUnit):
+class ForecastStationDataUnit(StationDataUnit):
+    """Flood forecast data unit - station"""
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.lead_time: int = kwargs.get("lead_time")
-        self.likelihood: float = kwargs.get(
-            "likelihood", None
-        )  # probablity of occurrence [0, 1]
-        self.severity: float = kwargs.get(
-            "severity", None
-        )  # severity of the event [0, 1]
-        self.station: str = kwargs.get("station", None)  # station ID
+        self.forecasts: List[FloodForecast] = kwargs.get("forecasts", None)
+        # START: TO BE DEPRECATED
         self.triggered: bool = kwargs.get("triggered", None)  # triggered or not
-        self.return_period: float = kwargs.get(
-            "return_period", None
-        )  # return period in years
+        self.return_period: float = kwargs.get("return_period", None)  # return period
         self.alert_class: str = kwargs.get("alert_class", None)  # alert class
+        # END: TO BE DEPRECATED
 
 
-# END: TO BE DEPRECATED
-
-
-class TriggerThreshold(TypedDict):
+class Threshold(TypedDict):
     return_period: float
-    threshold: float
+    threshold_value: float
 
 
-class TriggerThresholdDataUnit(BaseDataUnit):
-    """Trigger threshold data unit"""
+class ThresholdDataUnit(AdminDataUnit):
+    """Trigger/alert threshold data unit"""
 
-    def __init__(self, trigger_thresholds: List[TriggerThreshold], **kwargs):
+    def __init__(self, thresholds: List[Threshold], **kwargs):
         super().__init__(**kwargs)
-        self.trigger_thresholds: List[TriggerThreshold] = trigger_thresholds
+        self.thresholds: List[Threshold] = thresholds
 
-    def get_threshold(self, return_period: float) -> TriggerThreshold:
+    def get_threshold(self, return_period: float) -> Threshold:
         """Get trigger threshold by return period"""
-        trigger_threshold = next(
+        threshold = next(
             filter(
                 lambda x: x.get("return_period") == return_period,
-                self.trigger_thresholds,
+                self.thresholds,
             ),
             None,
         )
-        if not trigger_threshold:
+        if not threshold:
             raise ValueError(f"Return period {return_period} not found")
         else:
-            return trigger_threshold
+            return threshold["threshold_value"]
 
 
-class BaseDataSet:
-    """Base class for pipeline data sets"""
+class ThresholdStationDataUnit(StationDataUnit):
+    """Trigger/alert threshold data unit - station"""
+
+    def __init__(self, thresholds: List[Threshold], **kwargs):
+        super().__init__(**kwargs)
+        self.thresholds: List[Threshold] = thresholds
+
+    def get_threshold(self, return_period: float) -> Threshold:
+        """Get trigger threshold by return period"""
+        threshold = next(
+            filter(
+                lambda x: x.get("return_period") == return_period,
+                self.thresholds,
+            ),
+            None,
+        )
+        if not threshold:
+            raise ValueError(f"Return period {return_period} not found")
+        else:
+            return threshold["threshold_value"]
+
+
+class AdminDataSet:
+    """Base class for admin data sets"""
 
     def __init__(
         self,
         country: str = None,
         timestamp: datetime = datetime.now(),
         adm_levels: List[int] = None,
-        data_units: List[BaseDataUnit] = None,
+        data_units: List[AdminDataUnit] = None,
     ):
         self.country = country
         self.timestamp = timestamp
@@ -136,7 +181,7 @@ class BaseDataSet:
             raise ValueError("Data units not found")
         return list(filter(lambda x: x.lead_time == lead_time, self.data_units))
 
-    def get_data_unit(self, pcode: str, lead_time: int = None) -> BaseDataUnit:
+    def get_data_unit(self, pcode: str, lead_time: int = None) -> AdminDataUnit:
         """Get data unit by pcode and optionally by lead time"""
         if not self.data_units:
             raise ValueError("Data units not found")
@@ -160,7 +205,7 @@ class BaseDataSet:
         else:
             return bdu
 
-    def upsert_data_unit(self, data_unit: BaseDataUnit):
+    def upsert_data_unit(self, data_unit: AdminDataUnit):
         """Add data unit; if it already exists, update it"""
         if not self.data_units:
             self.data_units = [data_unit]
@@ -185,3 +230,82 @@ class BaseDataSet:
             self.data_units.append(data_unit)
         else:
             self.data_units[bdu[0]] = data_unit
+
+
+class StationDataSet:
+    """Base class for station data sets"""
+
+    def __init__(
+        self,
+        country: str = None,
+        timestamp: datetime = datetime.now(),
+        data_units: List[StationDataUnit] = None,
+    ):
+        self.country = country
+        self.timestamp = timestamp
+        self.data_units = data_units
+
+    def get_data_unit(
+        self, station_code: str, lead_time: int = None
+    ) -> StationDataUnit:
+        """Get data unit by station_code and optionally by lead time"""
+        if not self.data_units:
+            raise ValueError("Data units not found")
+        if lead_time:
+            bdu = next(
+                filter(
+                    lambda x: x.station_code == station_code
+                    and x.lead_time == lead_time,
+                    self.data_units,
+                ),
+                None,
+            )
+        else:
+            bdu = next(
+                filter(lambda x: x.station_code == station_code, self.data_units),
+                None,
+            )
+        if not bdu:
+            raise ValueError(
+                f"Data unit with station_code {station_code} and lead_time {lead_time} not found"
+            )
+        else:
+            return bdu
+
+    def upsert_data_unit(self, data_unit: StationDataUnit):
+        """Add data unit; if it already exists, update it"""
+        if not self.data_units:
+            self.data_units = [data_unit]
+        if hasattr(data_unit, "lead_time"):
+            bdu = next(
+                filter(
+                    lambda x: x[1].station_code == data_unit.station_code
+                    and x[1].lead_time == data_unit.lead_time,
+                    enumerate(self.data_units),
+                ),
+                None,
+            )
+        else:
+            bdu = next(
+                filter(
+                    lambda x: x[1].station_code == data_unit.station_code,
+                    enumerate(self.data_units),
+                ),
+                None,
+            )
+        if not bdu:
+            self.data_units.append(data_unit)
+        else:
+            self.data_units[bdu[0]] = data_unit
+
+    def get_lead_times(self):
+        """Return list of unique lead times"""
+        return list(
+            set([x.lead_time for x in self.data_units if hasattr(x, "lead_time")])
+        )
+
+    def get_station_codes(self):
+        """Return list of unique station codes"""
+        return list(
+            set([x.station_code for x in self.data_units if hasattr(x, "station_code")])
+        )

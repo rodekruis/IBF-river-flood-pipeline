@@ -1,9 +1,7 @@
 import os.path
-from datetime import datetime, timedelta
 from floodpipeline.pipeline import Pipeline
 from floodpipeline.secrets import Secrets
 from floodpipeline.settings import Settings
-from floodpipeline.data import BaseDataSet, RiverDischargeDataUnit
 
 if not os.path.exists(".env"):
     raise FileNotFoundError("credentials not found, run this test from root directory")
@@ -11,9 +9,10 @@ pipe = Pipeline(
     secrets=Secrets(".env"), settings=Settings("config/config-template.yaml")
 )
 
-flood_data = pipe.extract.get_data(source="GloFAS", country="UGA")
-for data_unit in flood_data.data_units:
-    print(vars(data_unit))
+pipe.extract.prepare_glofas_data()
+discharge_data, discharge_station_data = pipe.extract.extract_glofas_data("UGA")
+for discharge_unit in discharge_data.data_units:
+    print(vars(discharge_unit))
 
 # gdf = pipe.load.get_adm_boundaries(country="PHL", adm_level=1)
 

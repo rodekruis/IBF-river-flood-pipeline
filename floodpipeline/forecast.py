@@ -1,8 +1,14 @@
 from floodpipeline.secrets import Secrets
 from floodpipeline.settings import Settings
-from floodpipeline.data import BaseDataSet, FloodForecastDataUnit, FloodForecast
+from floodpipeline.data import (
+    AdminDataSet,
+    ForecastDataUnit,
+    FloodForecast,
+    ForecastStationDataUnit,
+    StationDataSet,
+)
 from floodpipeline.load import Load
-import time
+from datetime import datetime
 from typing import List
 from shapely import Polygon
 import pandas as pd
@@ -104,58 +110,46 @@ class Forecast:
         self.secrets = secrets
 
     def forecast(
-        self, river_discharges: BaseDataSet, trigger_thresholds: BaseDataSet
-    ) -> BaseDataSet:
+        self, discharge_dataset: AdminDataSet, threshold_dataset: AdminDataSet
+    ) -> AdminDataSet:
         os.makedirs(self.input_data_path, exist_ok=True)
         os.makedirs(self.output_data_path, exist_ok=True)
-        country = river_discharges.country
+        country = discharge_dataset.country
 
-        flood_forecast_dataset = self.__compute_triggers(
-            river_discharges, trigger_thresholds
-        )
-        flooded = self.__compute_flood_extent(country, flood_forecast_dataset)
+        forecast_dataset = self.__compute_triggers(discharge_dataset, threshold_dataset)
+        flooded = self.__compute_flood_extent(country, forecast_dataset)
         if flooded:
-            flood_forecast_dataset = self.__compute_affected_pop(
-                country, flood_forecast_dataset
-            )
-        return flood_forecast_dataset
+            forecast_dataset = self.__compute_affected_pop(country, forecast_dataset)
+        return forecast_dataset
 
-    def __compute_triggers(
-        self,
-        river_discharges: BaseDataSet,
-        trigger_thresholds: BaseDataSet,
-    ) -> BaseDataSet:
-        """Determine if trigger level is reached, its probability, and the alert class"""
+    def forecast_station(
+        self, discharge_dataset: StationDataSet, threshold_dataset: StationDataSet
+    ) -> StationDataSet:
+        os.makedirs(self.input_data_path, exist_ok=True)
+        os.makedirs(self.output_data_path, exist_ok=True)
+        country = discharge_dataset.country
+        forecast_dataset = StationDataSet(country=country, timestamp=datetime.today())
 
-        country = river_discharges.country
-        adm_levels = river_discharges.adm_levels
-        flood_forecast_dataset = BaseDataSet(country=country, adm_levels=adm_levels)
-
-        trigger_on_adm_level = self.settings.get_country_setting(
-            country, "trigger-on-admin-level"
-        )
         trigger_on_lead_time = self.settings.get_country_setting(
             country, "trigger-on-lead-time"
         )
-        for lead_time, pcode in itertools.product(
-            river_discharges.get_lead_times(), river_discharges.get_pcodes()
-        ):
-            river_discharge_data_unit = river_discharges.get_data_unit(pcode, lead_time)
-            trigger_threshold_data_unit = trigger_thresholds.get_data_unit(pcode)
-            adm_level = river_discharge_data_unit.adm_level
+        for discharge_station in discharge_dataset.data_units:
+            station_code = discharge_station.station_code
+            lead_time = discharge_station.lead_time
+            threshold_station = threshold_dataset.get_data_unit(station_code)
 
-            likelihood_per_return_period, flood_forecasts = {}, []
-            for trigger_threshold in trigger_threshold_data_unit.trigger_thresholds:
+            likelihood_per_return_period, forecasts = {}, []
+            for threshold in threshold_station.thresholds:
                 threshold_checks = map(
-                    lambda x: 1 if x > trigger_threshold["threshold"] else 0,
-                    river_discharge_data_unit.river_discharge_ensemble,
+                    lambda x: 1 if x > threshold["threshold_value"] else 0,
+                    discharge_station.discharge_ensemble,
                 )
                 likelihood = sum(threshold_checks) / len(
-                    river_discharge_data_unit.river_discharge_ensemble
+                    discharge_station.discharge_ensemble
                 )
-                return_period = trigger_threshold["return_period"]
+                return_period = threshold["return_period"]
                 likelihood_per_return_period[return_period] = likelihood
-                flood_forecasts.append(
+                forecasts.append(
                     FloodForecast(return_period=return_period, likelihood=likelihood)
                 )
 
@@ -182,7 +176,6 @@ class Forecast:
                 True
                 if likelihood_per_return_period[trigger_on_return_period]
                 >= trigger_on_minimum_probability
-                and adm_level == trigger_on_adm_level
                 and lead_time == trigger_on_lead_time
                 else False
             )
@@ -214,28 +207,138 @@ class Forecast:
                 alert_on_minimum_probability,
             )
             # END: TO BE DEPRECATED
-            forecast_data_unit = FloodForecastDataUnit(
-                adm_level=adm_level,
-                pcode=pcode,
+            forecast_data_unit = ForecastStationDataUnit(
+                station_code=discharge_station.station_code,
+                station_name=discharge_station.station_name,
+                lat=discharge_station.lat,
+                lon=discharge_station.lon,
+                pcodes=discharge_station.pcodes,
                 lead_time=lead_time,
-                flood_forecasts=flood_forecasts,
+                forecasts=forecasts,
                 # START: TO BE DEPRECATED
                 triggered=triggered,
                 return_period=return_period,
                 alert_class=alert_class,
                 # END: TO BE DEPRECATED
             )
-            flood_forecast_dataset.upsert_data_unit(forecast_data_unit)
-        return flood_forecast_dataset
+            forecast_dataset.upsert_data_unit(forecast_data_unit)
+        return forecast_dataset
+
+    def __compute_triggers(
+        self,
+        discharges: AdminDataSet,
+        thresholds: AdminDataSet,
+    ) -> AdminDataSet:
+        """Determine if trigger level is reached, its probability, and the alert class"""
+
+        country = discharges.country
+        adm_levels = discharges.adm_levels
+        forecast_dataset = AdminDataSet(
+            country=country, adm_levels=adm_levels, timestamp=datetime.today()
+        )
+        trigger_on_lead_time = self.settings.get_country_setting(
+            country, "trigger-on-lead-time"
+        )
+        trigger_on_return_period = self.settings.get_country_setting(
+            country, "trigger-on-return-period"
+        )
+        trigger_on_minimum_probability = self.settings.get_country_setting(
+            country, "trigger-on-minimum-probability"
+        )
+        alert_on_return_period = self.settings.get_country_setting(
+            country, "alert-on-return-period"
+        )
+        alert_on_minimum_probability = self.settings.get_country_setting(
+            country, "alert-on-minimum-probability"
+        )
+
+        for pcode in discharges.get_pcodes():
+            threshold_data_unit = thresholds.get_data_unit(pcode)
+            for lead_time in discharges.get_lead_times():
+                discharge_data_unit = discharges.get_data_unit(pcode, lead_time)
+                adm_level = discharge_data_unit.adm_level
+
+                likelihood_per_return_period, forecasts = {}, []
+                for threshold in threshold_data_unit.thresholds:
+                    threshold_checks = map(
+                        lambda x: 1 if x > threshold["threshold_value"] else 0,
+                        discharge_data_unit.discharge_ensemble,
+                    )
+                    likelihood = sum(threshold_checks) / len(
+                        discharge_data_unit.discharge_ensemble
+                    )
+                    return_period = threshold["return_period"]
+                    likelihood_per_return_period[return_period] = likelihood
+                    forecasts.append(
+                        FloodForecast(
+                            return_period=return_period, likelihood=likelihood
+                        )
+                    )
+
+                # START: TO BE DEPRECATED
+                if trigger_on_return_period not in likelihood_per_return_period.keys():
+                    raise ValueError(
+                        f"No threshold found for return period {trigger_on_return_period}, "
+                        f"which defines trigger in config file (trigger-on-return-period). "
+                        f"Thresholds found: {likelihood_per_return_period.keys()}"
+                    )
+                triggered = (
+                    True
+                    if likelihood_per_return_period[trigger_on_return_period]
+                    >= trigger_on_minimum_probability
+                    and lead_time == trigger_on_lead_time
+                    else False
+                )
+                return_period = next(
+                    (
+                        key
+                        for key, value in reversed(likelihood_per_return_period.items())
+                        if value >= trigger_on_minimum_probability
+                    ),
+                    0.0,
+                )
+                if any(
+                    rp not in likelihood_per_return_period.keys()
+                    for rp in alert_on_return_period.values()
+                ):
+                    missing_rps = [
+                        rp
+                        for rp in alert_on_return_period.values()
+                        if rp not in likelihood_per_return_period.keys()
+                    ]
+                    raise ValueError(
+                        f"No threshold found for return periods {missing_rps}, "
+                        f"which define alert classes in config file (alert-on-return-period). "
+                        f"Thresholds found: {likelihood_per_return_period.keys()}"
+                    )
+                alert_class = classify_alert(
+                    likelihood_per_return_period,
+                    alert_on_return_period,
+                    alert_on_minimum_probability,
+                )
+                # END: TO BE DEPRECATED
+                forecast_data_unit = ForecastDataUnit(
+                    adm_level=adm_level,
+                    pcode=pcode,
+                    lead_time=lead_time,
+                    forecasts=forecasts,
+                    # START: TO BE DEPRECATED
+                    triggered=triggered,
+                    return_period=return_period,
+                    alert_class=alert_class,
+                    # END: TO BE DEPRECATED
+                )
+                forecast_dataset.upsert_data_unit(forecast_data_unit)
+        return forecast_dataset
 
     def __compute_flood_extent(
-        self, country: str, flood_forecast_dataset: BaseDataSet
+        self, country: str, forecast_dataset: AdminDataSet
     ) -> bool:
         """Compute flood extent raster, return True if flooded, False otherwise"""
         # get country-wide flood extent rasters
-        if country != flood_forecast_dataset.country:
+        if country != forecast_dataset.country:
             raise ValueError(
-                f"Country {country} does not match flood forecast dataset country {flood_forecast_dataset.country}"
+                f"Country {country} does not match flood forecast dataset country {forecast_dataset.country}"
             )
         flood_rasters = {}
         for rp in [10, 20, 50, 75, 100, 200, 500]:
@@ -249,16 +352,14 @@ class Forecast:
                 )
             flood_rasters[rp] = flood_raster_filepath
         flood_rasters_admin_div = []
-        for adm_lvl in flood_forecast_dataset.adm_levels:
+        for adm_lvl in forecast_dataset.adm_levels:
 
             # get adm boundaries
-            gdf_adm = self.load.get_adm_boundaries(
-                flood_forecast_dataset.country, adm_lvl
-            )
+            gdf_adm = self.load.get_adm_boundaries(forecast_dataset.country, adm_lvl)
             gdf_adm.index = gdf_adm[f"adm{adm_lvl}_pcode"]
 
             # calculate flood extent for each triggered admin division
-            for forecast_data_unit in flood_forecast_dataset.data_units:
+            for forecast_data_unit in forecast_dataset.data_units:
                 if (
                     forecast_data_unit.adm_level == adm_lvl
                     and forecast_data_unit.triggered
@@ -341,8 +442,8 @@ class Forecast:
             dest.write(affected_pop_raster)
 
     def __compute_affected_pop(
-        self, country: str, flood_forecast_dataset: BaseDataSet
-    ) -> BaseDataSet:
+        self, country: str, forecast_dataset: AdminDataSet
+    ) -> AdminDataSet:
         """Compute affected population given a flood extent"""
 
         # calculate affected population raster
@@ -350,7 +451,7 @@ class Forecast:
 
         if os.path.exists(self.aff_pop_filepath):
             # calculate affected population per admin division
-            for adm_lvl in flood_forecast_dataset.adm_levels:
+            for adm_lvl in forecast_dataset.adm_levels:
 
                 # get adm boundaries
                 gdf_adm = self.load.get_adm_boundaries(country, adm_lvl)
@@ -390,35 +491,35 @@ class Forecast:
                 gdf_pop.index = gdf_pop[f"adm{adm_lvl}_pcode"]
 
                 # add affected population to forecast data units
-                for forecast_data_unit in flood_forecast_dataset.data_units:
+                for forecast_data_unit in forecast_dataset.data_units:
                     if (
                         forecast_data_unit.adm_level == adm_lvl
                         and forecast_data_unit.triggered
                     ):
-                        forecast_data_unit.pop_affected = int(
-                            gdf_aff_pop.loc[forecast_data_unit.pcode, "sum"]
-                        )
+                        try:
+                            pop_affected = int(
+                                gdf_aff_pop.loc[forecast_data_unit.pcode, "sum"]
+                            )
+                        except (ValueError, TypeError):
+                            pop_affected = 0
+                        forecast_data_unit.pop_affected = pop_affected
                         forecast_data_unit.pop_affected_perc = (
                             float(
-                                forecast_data_unit.pop_affected
+                                pop_affected
                                 / gdf_pop.loc[forecast_data_unit.pcode, "sum"]
                             )
                             * 100.0
                         )
 
-        return flood_forecast_dataset
+        return forecast_dataset
 
     # START: TO BE DEPRECATED
     def __compute_triggers_stations(
         self,
-        river_discharges: BaseDataSet,
-        trigger_thresholds: BaseDataSet,
+        discharges: AdminDataSet,
+        thresholds: AdminDataSet,
     ):
         """Determine if trigger level is reached, its probability, and alert class'"""
         pass
 
     # END: TO BE DEPRECATED
-
-    def __calculate_probability(self, river_discharges):
-        """Calculate probability of river discharge"""
-        pass
