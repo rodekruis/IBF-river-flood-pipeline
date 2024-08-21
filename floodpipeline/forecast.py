@@ -348,7 +348,7 @@ class Forecast:
             if not os.path.exists(flood_raster_filepath):
                 self.load.get_from_blob(
                     flood_raster_filepath,
-                    f"flood/pipeline-input/flood-maps/{country.upper()}/flood_map_{country.upper()}_RP{rp}.tif",
+                    f"{self.settings.get_setting('blob_storage_path')}/flood-maps/{country.upper()}/flood_map_{country.upper()}_RP{rp}.tif",
                 )
             flood_rasters[rp] = flood_raster_filepath
         flood_rasters_admin_div = []
@@ -512,14 +512,3 @@ class Forecast:
                         )
 
         return forecast_dataset
-
-    # START: TO BE DEPRECATED
-    def __compute_triggers_stations(
-        self,
-        discharges: AdminDataSet,
-        thresholds: AdminDataSet,
-    ):
-        """Determine if trigger level is reached, its probability, and alert class'"""
-        pass
-
-    # END: TO BE DEPRECATED

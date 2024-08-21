@@ -123,8 +123,9 @@ class Load:
             [
                 "COSMOS_URL",
                 "COSMOS_KEY",
-                "SQL_USER",
-                "SQL_PASSWORD",
+                "BLOB_ACCOUNT_NAME",
+                "BLOB_ACCOUNT_KEY",
+                "BLOB_CONTAINER_NAME",
                 "IBF_API_URL",
                 "IBF_API_USER",
                 "IBF_API_PASSWORD",
@@ -770,9 +771,12 @@ class Load:
 
     def __get_blob_service_client(self, blob_path: str):
         blob_service_client = BlobServiceClient.from_connection_string(
-            self.secrets.get_secret("blob_connection_string")
+            f"DefaultEndpointsProtocol=https;"
+            f'AccountName={self.secrets.get_secret("BLOB_ACCOUNT_NAME")};'
+            f'AccountKey={self.secrets.get_secret("BLOB_ACCOUNT_KEY")};'
+            f"EndpointSuffix=core.windows.net"
         )
-        container = self.secrets.get_secret("blob_container_name")
+        container = self.secrets.get_secret("BLOB_CONTAINER_NAME")
         return blob_service_client.get_blob_client(container=container, blob=blob_path)
 
     def save_to_blob(self, local_path: str, file_dir_blob: str):
