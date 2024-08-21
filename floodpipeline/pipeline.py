@@ -36,9 +36,11 @@ class Pipeline:
 
         countries = [c["name"] for c in self.settings.get_setting("countries")]
         if country is not None:
-            if country != "ALL" and country not in countries:
-                raise ValueError(f"Country {country} not found in settings")
-            countries = [country]
+            if country != "ALL":
+                if country not in countries:
+                    raise ValueError(f"Country {country} not found in settings")
+                countries = [country]
+                
 
         if prepare:
             logging.info("prepare discharge data for all countries")
