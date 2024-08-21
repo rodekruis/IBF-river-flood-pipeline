@@ -213,7 +213,7 @@ class Load:
             raise ValueError(
                 f"Error in IBF API POST request: {r.status_code}, {r.text}"
             )
-        if body:
+        if body and os.path.exists("logs"):
             if "date" in body.keys():
                 filename = body["date"] + ".json"
                 filename = "".join(x for x in filename if x.isalnum())
