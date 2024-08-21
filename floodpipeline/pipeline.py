@@ -100,7 +100,7 @@ class Pipeline:
                         data_type="forecast", dataset=forecast_dataset
                     )
                     self.load.save_pipeline_data(
-                        data_type="forecast-station", dataset=forecast_dataset
+                        data_type="forecast-station", dataset=forecast_station_dataset
                     )
             else:
                 logging.info("get flood forecasts from storage")
