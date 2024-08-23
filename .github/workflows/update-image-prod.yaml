@@ -1,4 +1,4 @@
-name: Update IBF river flood pipeline docker image in ACR
+name: Update pipeline prod
 
 on:
   push:
