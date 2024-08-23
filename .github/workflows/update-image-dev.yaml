@@ -3,10 +3,7 @@ name: Update IBF river flood pipeline docker image in ACR
 on:
   push:
     branches:
-      - main
-    
-env:
-  IMAGE_NAME: ibf-river-flood-model
+      - dev
   
 jobs:
   build:
@@ -25,5 +22,5 @@ jobs:
       uses: docker/build-push-action@v5
       with:
         push: true
-        tags: ${{ secrets.ACR_ENDPOINT }}/${{ env.IMAGE_NAME }}:latest
+        tags: ${{ secrets.ACR_ENDPOINT }}/${{ vars.IMAGE_NAME }}:dev
         file: ./Dockerfile
