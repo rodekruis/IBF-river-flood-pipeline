@@ -8,7 +8,7 @@ authors = [
 ]
 description = "IBF Pipeline for Floods"
 readme = "README.md"
-repository = "https://github.com/rodekruis/ibf-pipeline-flood"
+repository = "https://github.com/rodekruis/IBF-river-flood-pipeline"
 packages = [{include = "floodpipeline"}]
 
 [tool.poetry.dependencies]
