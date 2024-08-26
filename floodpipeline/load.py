@@ -26,6 +26,7 @@ import geopandas as gpd
 from shapely import Point
 from typing import List
 from azure.storage.blob import BlobServiceClient
+from azure.core.exceptions import ResourceNotFoundError
 
 COSMOS_DATA_TYPES = [
     "discharge",
@@ -791,4 +792,7 @@ class Load:
         blob_client = self.__get_blob_service_client(blob_path)
 
         with open(local_path, "wb") as download_file:
-            download_file.write(blob_client.download_blob().readall())
+            try:
+                download_file.write(blob_client.download_blob().readall())
+            except ResourceNotFoundError:
+                raise FileNotFoundError(f"File {blob_path} not found in Azure Blob Storage")

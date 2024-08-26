@@ -130,11 +130,17 @@ class Extract:
         netcdf_files_local_path = []
         for filename in filenames:
             local_path = os.path.join(self.inputPathGrid, filename)
-            self.load.get_from_blob(
-                local_path,
-                f"{blob_path}/glofas-data/{date}/{self.country}/{filename}",
-            )
+            try:
+                self.load.get_from_blob(
+                    local_path,
+                    f"{blob_path}/glofas-data/{date}/{self.country}/{filename}",
+                )
+            except FileNotFoundError:
+                logging.warning(f"NetCDF file {filename} not found, skipping")
+                continue
             netcdf_files_local_path.append(local_path)
+        if len(netcdf_files_local_path) == 0:
+            raise FileNotFoundError(f"No NetCDF files found for country {self.country}")
 
         # Extract data from NetCDF files
         logging.info("Extract admin-level river discharge from GloFAS data")
@@ -238,10 +244,14 @@ class Extract:
             # Download netcdf file
             logging.info(f"start ensemble {ensemble}")
             filename_local = os.path.join(self.inputPathGrid, f"GloFAS_{ensemble}.nc")
-            self.load.get_from_blob(
-                filename_local,
-                f"{blob_path}/glofas-data/{date}/dis_{'{:02d}'.format(ensemble)}_{date}00.nc",
-            )
+            try:
+                self.load.get_from_blob(
+                    filename_local,
+                    f"{blob_path}/glofas-data/{date}/dis_{'{:02d}'.format(ensemble)}_{date}00.nc",
+                )
+            except FileNotFoundError:
+                logging.warning(f"NetCDF file of ensemble {ensemble} not found, skipping")
+                continue
             nc_file = xr.open_dataset(filename_local)
 
             # Slice netcdf file to country boundaries

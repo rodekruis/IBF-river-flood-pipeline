@@ -94,8 +94,8 @@ class Pipeline:
                     discharge_dataset=discharge_station_dataset,
                     threshold_dataset=thresholds_station_dataset,
                 )
-                logging.info("save flood forecasts to storage")
                 if save:
+                    logging.info("save flood forecasts to storage")
                     self.load.save_pipeline_data(
                         data_type="forecast", dataset=forecast_dataset
                     )
