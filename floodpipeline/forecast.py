@@ -122,108 +122,6 @@ class Forecast:
             forecast_dataset = self.__compute_affected_pop(country, forecast_dataset)
         return forecast_dataset
 
-    def forecast_station(
-        self, discharge_dataset: StationDataSet, threshold_dataset: StationDataSet
-    ) -> StationDataSet:
-        os.makedirs(self.input_data_path, exist_ok=True)
-        os.makedirs(self.output_data_path, exist_ok=True)
-        country = discharge_dataset.country
-        forecast_dataset = StationDataSet(country=country, timestamp=datetime.today())
-
-        trigger_on_lead_time = self.settings.get_country_setting(
-            country, "trigger-on-lead-time"
-        )
-        for discharge_station in discharge_dataset.data_units:
-            station_code = discharge_station.station_code
-            lead_time = discharge_station.lead_time
-            threshold_station = threshold_dataset.get_data_unit(station_code)
-
-            likelihood_per_return_period, forecasts = {}, []
-            for threshold in threshold_station.thresholds:
-                threshold_checks = map(
-                    lambda x: 1 if x > threshold["threshold_value"] else 0,
-                    discharge_station.discharge_ensemble,
-                )
-                likelihood = sum(threshold_checks) / len(
-                    discharge_station.discharge_ensemble
-                )
-                return_period = threshold["return_period"]
-                likelihood_per_return_period[return_period] = likelihood
-                forecasts.append(
-                    FloodForecast(return_period=return_period, likelihood=likelihood)
-                )
-
-            # START: TO BE DEPRECATED
-            trigger_on_return_period = self.settings.get_country_setting(
-                country, "trigger-on-return-period"
-            )
-            trigger_on_minimum_probability = self.settings.get_country_setting(
-                country, "trigger-on-minimum-probability"
-            )
-            alert_on_return_period = self.settings.get_country_setting(
-                country, "alert-on-return-period"
-            )
-            alert_on_minimum_probability = self.settings.get_country_setting(
-                country, "alert-on-minimum-probability"
-            )
-            if trigger_on_return_period not in likelihood_per_return_period.keys():
-                raise ValueError(
-                    f"No threshold found for return period {trigger_on_return_period}, "
-                    f"which defines trigger in config file (trigger-on-return-period). "
-                    f"Thresholds found: {likelihood_per_return_period.keys()}"
-                )
-            triggered = (
-                True
-                if likelihood_per_return_period[trigger_on_return_period]
-                >= trigger_on_minimum_probability
-                and lead_time == trigger_on_lead_time
-                else False
-            )
-            return_period = next(
-                (
-                    key
-                    for key, value in reversed(likelihood_per_return_period.items())
-                    if value >= trigger_on_minimum_probability
-                ),
-                0.0,
-            )
-            if any(
-                rp not in likelihood_per_return_period.keys()
-                for rp in alert_on_return_period.values()
-            ):
-                missing_rps = [
-                    rp
-                    for rp in alert_on_return_period.values()
-                    if rp not in likelihood_per_return_period.keys()
-                ]
-                raise ValueError(
-                    f"No threshold found for return periods {missing_rps}, "
-                    f"which define alert classes in config file (alert-on-return-period). "
-                    f"Thresholds found: {likelihood_per_return_period.keys()}"
-                )
-            alert_class = classify_alert(
-                likelihood_per_return_period,
-                alert_on_return_period,
-                alert_on_minimum_probability,
-            )
-            # END: TO BE DEPRECATED
-            forecast_data_unit = ForecastStationDataUnit(
-                station_code=discharge_station.station_code,
-                station_name=discharge_station.station_name,
-                lat=discharge_station.lat,
-                lon=discharge_station.lon,
-                pcodes=discharge_station.pcodes,
-                lead_time=lead_time,
-                forecasts=forecasts,
-                # START: TO BE DEPRECATED
-                triggered=triggered,
-                return_period=return_period,
-                alert_class=alert_class,
-                # END: TO BE DEPRECATED
-            )
-            forecast_dataset.upsert_data_unit(forecast_data_unit)
-        return forecast_dataset
-
     def __compute_triggers(
         self,
         discharges: AdminDataSet,
@@ -286,7 +184,7 @@ class Forecast:
                     True
                     if likelihood_per_return_period[trigger_on_return_period]
                     >= trigger_on_minimum_probability
-                    and lead_time == trigger_on_lead_time
+                    and lead_time <= trigger_on_lead_time
                     else False
                 )
                 return_period = next(
@@ -340,6 +238,9 @@ class Forecast:
             raise ValueError(
                 f"Country {country} does not match flood forecast dataset country {forecast_dataset.country}"
             )
+        if os.path.exists(self.flood_extent_filepath):
+            os.remove(self.flood_extent_filepath)
+            
         flood_rasters = {}
         for rp in [10, 20, 50, 75, 100, 200, 500]:
             flood_raster_filepath = (
@@ -390,8 +291,9 @@ class Forecast:
             flood_raster_data, flood_raster_meta = merge_rasters(
                 flood_rasters_admin_div
             )
-            if os.path.exists(self.flood_extent_filepath):
-                os.remove(self.flood_extent_filepath)
+            # flood_raster_data = np.where(
+            #     flood_raster_data > 0., 1., 0.
+            # )
             with rasterio.open(
                 self.flood_extent_filepath, "w", **flood_raster_meta
             ) as dest:
@@ -408,8 +310,6 @@ class Forecast:
                     flood_raster_data > -9999999999999999.0, 0.0, 0.0
                 )
                 flood_raster_meta = src.meta.copy()
-            if os.path.exists(self.flood_extent_filepath):
-                os.remove(self.flood_extent_filepath)
             with rasterio.open(
                 self.flood_extent_filepath, "w", **flood_raster_meta
             ) as dest:
@@ -512,3 +412,115 @@ class Forecast:
                         )
 
         return forecast_dataset
+    
+    def forecast_station(
+        self, discharge_dataset: StationDataSet, threshold_dataset: StationDataSet
+    ) -> StationDataSet:
+        os.makedirs(self.input_data_path, exist_ok=True)
+        os.makedirs(self.output_data_path, exist_ok=True)
+
+        forecast_dataset = self.__compute_triggers_station(discharge_dataset, threshold_dataset)
+        return forecast_dataset
+    
+    def __compute_triggers_station(
+        self, discharge_dataset: StationDataSet, threshold_dataset: StationDataSet
+    ) -> StationDataSet:
+        os.makedirs(self.input_data_path, exist_ok=True)
+        os.makedirs(self.output_data_path, exist_ok=True)
+        country = discharge_dataset.country
+        forecast_dataset = StationDataSet(country=country, timestamp=datetime.today())
+
+        trigger_on_lead_time = self.settings.get_country_setting(
+            country, "trigger-on-lead-time"
+        )
+        for discharge_station in discharge_dataset.data_units:
+            station_code = discharge_station.station_code
+            lead_time = discharge_station.lead_time
+            threshold_station = threshold_dataset.get_data_unit(station_code)
+
+            likelihood_per_return_period, forecasts = {}, []
+            for threshold in threshold_station.thresholds:
+                threshold_checks = map(
+                    lambda x: 1 if x > threshold["threshold_value"] else 0,
+                    discharge_station.discharge_ensemble,
+                )
+                likelihood = sum(threshold_checks) / len(
+                    discharge_station.discharge_ensemble
+                )
+                return_period = threshold["return_period"]
+                likelihood_per_return_period[return_period] = likelihood
+                forecasts.append(
+                    FloodForecast(return_period=return_period, likelihood=likelihood)
+                )
+
+            # START: TO BE DEPRECATED
+            trigger_on_return_period = self.settings.get_country_setting(
+                country, "trigger-on-return-period"
+            )
+            trigger_on_minimum_probability = self.settings.get_country_setting(
+                country, "trigger-on-minimum-probability"
+            )
+            alert_on_return_period = self.settings.get_country_setting(
+                country, "alert-on-return-period"
+            )
+            alert_on_minimum_probability = self.settings.get_country_setting(
+                country, "alert-on-minimum-probability"
+            )
+            if trigger_on_return_period not in likelihood_per_return_period.keys():
+                raise ValueError(
+                    f"No threshold found for return period {trigger_on_return_period}, "
+                    f"which defines trigger in config file (trigger-on-return-period). "
+                    f"Thresholds found: {likelihood_per_return_period.keys()}"
+                )
+            triggered = (
+                True
+                if likelihood_per_return_period[trigger_on_return_period]
+                >= trigger_on_minimum_probability
+                and lead_time <= trigger_on_lead_time
+                else False
+            )
+            return_period = next(
+                (
+                    key
+                    for key, value in reversed(likelihood_per_return_period.items())
+                    if value >= trigger_on_minimum_probability
+                ),
+                0.0,
+            )
+            if any(
+                rp not in likelihood_per_return_period.keys()
+                for rp in alert_on_return_period.values()
+            ):
+                missing_rps = [
+                    rp
+                    for rp in alert_on_return_period.values()
+                    if rp not in likelihood_per_return_period.keys()
+                ]
+                raise ValueError(
+                    f"No threshold found for return periods {missing_rps}, "
+                    f"which define alert classes in config file (alert-on-return-period). "
+                    f"Thresholds found: {likelihood_per_return_period.keys()}"
+                )
+            alert_class = classify_alert(
+                likelihood_per_return_period,
+                alert_on_return_period,
+                alert_on_minimum_probability,
+            )
+            # END: TO BE DEPRECATED
+            forecast_data_unit = ForecastStationDataUnit(
+                station_code=discharge_station.station_code,
+                station_name=discharge_station.station_name,
+                lat=discharge_station.lat,
+                lon=discharge_station.lon,
+                pcodes=discharge_station.pcodes,
+                lead_time=lead_time,
+                forecasts=forecasts,
+                # START: TO BE DEPRECATED
+                triggered=triggered,
+                return_period=return_period,
+                alert_class=alert_class,
+                # END: TO BE DEPRECATED
+            )
+            forecast_dataset.upsert_data_unit(forecast_data_unit)
+        return forecast_dataset
+    

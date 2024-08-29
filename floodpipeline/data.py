@@ -18,7 +18,7 @@ class StationDataUnit:
         self.station_name: str = kwargs.get("station_name")
         self.lat: float = kwargs.get("lat")
         self.lon: float = kwargs.get("lon")
-        self.pcodes: List[str] = kwargs.get(
+        self.pcodes: dict = kwargs.get(
             "pcodes"
         )  # pcodes of associated administrative divisions
 

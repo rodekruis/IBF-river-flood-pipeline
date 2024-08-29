@@ -180,11 +180,11 @@ def add_flood_thresholds():
         # then get all admin divisions intersecting that river
         # apply a buffer to rivers because many admin boundaries lie on top
         station_river = gpd.GeoDataFrame(geometry=df_nearest["geometry_y"])
-        station_river["geometry"] = station_river["geometry"].buffer(0.01)
-        station_river.to_file(
-            f"data/updates/{country}_river_station_buffer.gpkg",
-            driver="GPKG",
-        )
+        station_river["geometry"] = station_river["geometry"].buffer(0.001)
+        # station_river.to_file(
+        #     f"data/updates/{country}_river_station_buffer.gpkg",
+        #     driver="GPKG",
+        # )
         for adm_level in country_settings["admin-levels"]:
             adm_gdf = load.get_adm_boundaries(country=country, adm_level=adm_level)
             for ix, station_river in df_nearest.iterrows():
@@ -193,14 +193,16 @@ def add_flood_thresholds():
                 ]
                 pcodes = list(set(adm_gdf_station[f"adm{adm_level}_pcode"].to_list()))
                 if ix not in pcodes_stations.keys():
-                    pcodes_stations[ix] = pcodes
+                    pcodes_stations[ix] = {
+                        adm_level: pcodes
+                    }
                 else:
-                    pcodes_stations[ix].extend(pcodes)
+                    pcodes_stations[ix][adm_level] = pcodes
 
-                adm_gdf_station.to_file(
-                    f"data/updates/{country}_{ix}_{adm_level}.gpkg",
-                    driver="GPKG",
-                )
+                # adm_gdf_station.to_file(
+                #     f"data/updates/{country}_{ix}_{adm_level}.gpkg",
+                #     driver="GPKG",
+                # )
 
         # save thresholds
         threshold_station_data = StationDataSet(
