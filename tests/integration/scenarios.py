@@ -77,27 +77,28 @@ class Scenario:
         value = self.get_discharge_per_return_period(
             station=station, return_period=return_period
         )
-        rddu = self.discharge_station_dataset.get_data_unit(station, lead_time)
+        discharge_station = self.discharge_station_dataset.get_data_unit(station, lead_time)
         ensemble_values = [random.gauss(value, value * 0.1) for _ in range(self.noEns)]
         while get_ensemble_likelihood(ensemble_values, value) < probability:
             ensemble_values = [e * 1.01 for e in ensemble_values]
-        rddu.discharge_ensemble = ensemble_values
-        rddu.discharge_mean = sum(ensemble_values) / len(ensemble_values)
-        self.discharge_station_dataset.upsert_data_unit(rddu)
-
-        for pcode in rddu.pcodes:
-            value = self.get_discharge_per_return_period(
-                pcode=pcode, return_period=return_period
-            )
-            rddu = self.discharge_dataset.get_data_unit(pcode, lead_time)
-            ensemble_values = [
-                random.gauss(value, value * 0.1) for _ in range(self.noEns)
-            ]
-            while get_ensemble_likelihood(ensemble_values, value) < probability:
-                ensemble_values = [e * 1.01 for e in ensemble_values]
-            rddu.discharge_ensemble = ensemble_values
-            rddu.discharge_mean = sum(ensemble_values) / len(ensemble_values)
-            self.discharge_dataset.upsert_data_unit(rddu)
+        discharge_station.discharge_ensemble = ensemble_values
+        discharge_station.discharge_mean = sum(ensemble_values) / len(ensemble_values)
+        self.discharge_station_dataset.upsert_data_unit(discharge_station)
+        
+        for adm_level in discharge_station.pcodes.keys():
+            for pcode in discharge_station.pcodes[adm_level]:
+                value = self.get_discharge_per_return_period(
+                    pcode=pcode, return_period=return_period
+                )
+                discharge_admin = self.discharge_dataset.get_data_unit(pcode, lead_time)
+                ensemble_values = [
+                    random.gauss(value, value * 0.1) for _ in range(self.noEns)
+                ]
+                while get_ensemble_likelihood(ensemble_values, value) < probability:
+                    ensemble_values = [e * 1.01 for e in ensemble_values]
+                discharge_admin.discharge_ensemble = ensemble_values
+                discharge_admin.discharge_mean = sum(ensemble_values) / len(ensemble_values)
+                self.discharge_dataset.upsert_data_unit(discharge_admin)
 
     def get_random_stations(self, n):
         """Get random station codes"""
@@ -151,7 +152,7 @@ class Scenario:
             )
             + 0.01
         )
-        alert_classes = ["min", "max", "med", "min", "max", "med"]
+        alert_classes = ["min", "med", "min", "med"]
 
         self.thresholds_dataset = self.pipe.load.get_pipeline_data(
             data_type="threshold", country=self.country
@@ -241,7 +242,7 @@ class Scenario:
             self.set_discharge(
                 station=stations[0],
                 lead_time=random.randint(1, 6),
-                return_period=alert_on_return_period[alert_classes[0]],
+                return_period=alert_on_return_period[alert_classes[1]],
                 probability=alert_on_probability,
             )
 
