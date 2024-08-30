@@ -29,11 +29,18 @@ countries:
       max: 5
     alert-on-minimum-probability: 0.6
 
-#  - name: KEN
-#    admin-levels:
-#      - 2
-#      - 3
-#
+  - name: KEN
+    admin-levels:
+      - 2
+    trigger-on-lead-time: 7
+    trigger-on-return-period: 5
+    trigger-on-minimum-probability: 0.6
+    alert-on-return-period:
+      min: 1.5
+      med: 2
+      max: 5
+    alert-on-minimum-probability: 0.6
+
 #  - name: ETH
 #    admin-levels:
 #      - 2
