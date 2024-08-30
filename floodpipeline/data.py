@@ -75,11 +75,9 @@ class ForecastDataUnit(AdminDataUnit):
         self.pop_affected_perc: float = kwargs.get(
             "pop_affected_perc", 0.0
         )  # population affected (%)
-        # START: TO BE DEPRECATED
         self.triggered: bool = kwargs.get("triggered", None)  # triggered or not
         self.return_period: float = kwargs.get("return_period", None)  # return period
         self.alert_class: str = kwargs.get("alert_class", None)  # alert class
-        # END: TO BE DEPRECATED
 
 
 class ForecastStationDataUnit(StationDataUnit):
@@ -89,11 +87,9 @@ class ForecastStationDataUnit(StationDataUnit):
         super().__init__(**kwargs)
         self.lead_time: int = kwargs.get("lead_time")
         self.forecasts: List[FloodForecast] = kwargs.get("forecasts", None)
-        # START: TO BE DEPRECATED
         self.triggered: bool = kwargs.get("triggered", None)  # triggered or not
         self.return_period: float = kwargs.get("return_period", None)  # return period
         self.alert_class: str = kwargs.get("alert_class", None)  # alert class
-        # END: TO BE DEPRECATED
 
 
 class Threshold(TypedDict):
@@ -176,10 +172,16 @@ class AdminDataSet:
         )
 
     def get_data_units_lead_time(self, lead_time: int = None):
-        """Return list of data units by lead time"""
+        """Return list of data units filtered by lead time"""
         if not self.data_units:
             raise ValueError("Data units not found")
         return list(filter(lambda x: x.lead_time == lead_time, self.data_units))
+    
+    def get_data_units_admin_level(self, adm_level: int = None):
+        """Return list of data units filtered by admin leve"""
+        if not self.data_units:
+            raise ValueError("Data units not found")
+        return list(filter(lambda x: x.adm_level == adm_level, self.data_units))
 
     def get_data_unit(self, pcode: str, lead_time: int = None) -> AdminDataUnit:
         """Get data unit by pcode and optionally by lead time"""
@@ -230,6 +232,14 @@ class AdminDataSet:
             self.data_units.append(data_unit)
         else:
             self.data_units[bdu[0]] = data_unit
+            
+    def is_any_triggered(self):
+        """Check if any data unit is triggered"""
+        if not self.data_units:
+            raise ValueError("Data units not found")
+        if type(self.data_units[0]) != ForecastDataUnit:
+            raise ValueError("Data units are not forecast data units")
+        return any([x.triggered for x in self.data_units])
 
 
 class StationDataSet:

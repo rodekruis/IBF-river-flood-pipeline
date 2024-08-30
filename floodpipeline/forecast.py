@@ -78,9 +78,6 @@ def classify_alert(
 class Forecast:
     """
     Forecast flood events based on river discharge data
-    1. determine if trigger level is reached, with which probability, and alert class'
-    2. compute exposure (people affected)
-    3. compute flood extent
     """
 
     def __init__(self, settings: Settings = None, secrets: Secrets = None):
@@ -91,9 +88,9 @@ class Forecast:
         self.load = Load(settings=self.settings, secrets=self.secrets)
         self.input_data_path: str = "data/input"
         self.output_data_path: str = "data/output"
-        self.flood_extent_filepath: str = self.output_data_path + "/flood_extent.tif"
-        self.pop_filepath: str = self.input_data_path + "/population_density.tif"
-        self.aff_pop_filepath: str = self.output_data_path + "/affected_population.tif"
+        self.flood_extent_raster: str = self.output_data_path + "/flood_extent.tif"
+        self.pop_raster: str = self.input_data_path + "/population_density.tif"
+        self.aff_pop_raster: str = self.output_data_path + "/affected_population.tif"
 
     def set_settings(self, settings):
         """Set settings"""
@@ -112,13 +109,19 @@ class Forecast:
     def forecast(
         self, discharge_dataset: AdminDataSet, threshold_dataset: AdminDataSet
     ) -> AdminDataSet:
+        """
+        Forecast floods per admin division based on river discharge data
+        1. determine if trigger level is reached, with which probability, and alert class
+        2. compute flood extent
+        3. compute exposure (people affected)
+        """
         os.makedirs(self.input_data_path, exist_ok=True)
         os.makedirs(self.output_data_path, exist_ok=True)
         country = discharge_dataset.country
 
         forecast_dataset = self.__compute_triggers(discharge_dataset, threshold_dataset)
-        flooded = self.__compute_flood_extent(country, forecast_dataset)
-        if flooded:
+        self.__compute_flood_extent(country, forecast_dataset)
+        if forecast_dataset.is_any_triggered():
             forecast_dataset = self.__compute_affected_pop(country, forecast_dataset)
         return forecast_dataset
 
@@ -231,15 +234,15 @@ class Forecast:
 
     def __compute_flood_extent(
         self, country: str, forecast_dataset: AdminDataSet
-    ) -> bool:
-        """Compute flood extent raster, return True if flooded, False otherwise"""
+    ):
+        """Compute flood extent raster"""
         # get country-wide flood extent rasters
         if country != forecast_dataset.country:
             raise ValueError(
                 f"Country {country} does not match flood forecast dataset country {forecast_dataset.country}"
             )
-        if os.path.exists(self.flood_extent_filepath):
-            os.remove(self.flood_extent_filepath)
+        if os.path.exists(self.flood_extent_raster):
+            os.remove(self.flood_extent_raster)
             
         flood_rasters = {}
         for rp in [10, 20, 50, 75, 100, 200, 500]:
@@ -260,11 +263,8 @@ class Forecast:
             gdf_adm.index = gdf_adm[f"adm{adm_lvl}_pcode"]
 
             # calculate flood extent for each triggered admin division
-            for forecast_data_unit in forecast_dataset.data_units:
-                if (
-                    forecast_data_unit.adm_level == adm_lvl
-                    and forecast_data_unit.triggered
-                ):
+            for forecast_data_unit in forecast_dataset.get_data_units_admin_level(adm_lvl):
+                if forecast_data_unit.triggered:
                     adm_bounds = gdf_adm.loc[forecast_data_unit.pcode, "geometry"]
                     rp = forecast_data_unit.return_period
 
@@ -295,13 +295,12 @@ class Forecast:
             #     flood_raster_data > 0., 1., 0.
             # )
             with rasterio.open(
-                self.flood_extent_filepath, "w", **flood_raster_meta
+                self.flood_extent_raster, "w", **flood_raster_meta
             ) as dest:
                 dest.write(flood_raster_data)
             # delete intermediate files
             for file in flood_rasters_admin_div:
                 os.remove(file)
-            flooded = True
         else:
             # create empty raster
             with rasterio.open(list(flood_rasters.values())[0]) as src:
@@ -311,19 +310,17 @@ class Forecast:
                 )
                 flood_raster_meta = src.meta.copy()
             with rasterio.open(
-                self.flood_extent_filepath, "w", **flood_raster_meta
+                self.flood_extent_raster, "w", **flood_raster_meta
             ) as dest:
                 dest.write(flood_raster_data)
-            flooded = False
-        return flooded
 
     def __compute_affected_pop_raster(self, country: str):
         """Compute affected population raster given a flood extent"""
         # get population density raster
-        self.load.get_population_density(country, self.pop_filepath)
+        self.load.get_population_density(country, self.pop_raster)
         # convert flood extent raster to vector (list of shapes)
         flood_shapes = []
-        with rasterio.open(self.flood_extent_filepath) as dataset:
+        with rasterio.open(self.flood_extent_raster) as dataset:
             # Read the dataset's valid data mask as a ndarray.
             image = dataset.read(1).astype(np.float32)
             image[image >= 0] = 1
@@ -334,11 +331,11 @@ class Forecast:
                     flood_shapes.append(geom)
         # clip population density raster with flood shapes and save the result
         affected_pop_raster, affected_pop_meta = clip_raster(
-            self.pop_filepath, flood_shapes
+            self.pop_raster, flood_shapes
         )
-        if os.path.exists(self.aff_pop_filepath):
-            os.remove(self.aff_pop_filepath)
-        with rasterio.open(self.aff_pop_filepath, "w", **affected_pop_meta) as dest:
+        if os.path.exists(self.aff_pop_raster):
+            os.remove(self.aff_pop_raster)
+        with rasterio.open(self.aff_pop_raster, "w", **affected_pop_meta) as dest:
             dest.write(affected_pop_raster)
 
     def __compute_affected_pop(
@@ -349,7 +346,7 @@ class Forecast:
         # calculate affected population raster
         self.__compute_affected_pop_raster(country=country)
 
-        if os.path.exists(self.aff_pop_filepath):
+        if os.path.exists(self.aff_pop_raster):
             # calculate affected population per admin division
             for adm_lvl in forecast_dataset.adm_levels:
 
@@ -358,7 +355,7 @@ class Forecast:
                 gdf_adm = gdf_adm.to_crs("EPSG:4326")
 
                 # perform zonal statistics on affected population raster
-                with rasterio.open(self.aff_pop_filepath) as src:
+                with rasterio.open(self.aff_pop_raster) as src:
                     raster_array = src.read(1)
                     raster_array[raster_array < 0.0] = 0.0
                     transform = src.transform
@@ -375,7 +372,7 @@ class Forecast:
                 gdf_aff_pop.index = gdf_aff_pop[f"adm{adm_lvl}_pcode"]
 
                 # perform zonal statistics on population density raster (to compute % aff pop)
-                with rasterio.open(self.pop_filepath) as src:
+                with rasterio.open(self.pop_raster) as src:
                     raster_array = src.read(1)
                     raster_array[raster_array < 0.0] = 0.0
                     transform = src.transform
@@ -391,11 +388,8 @@ class Forecast:
                 gdf_pop.index = gdf_pop[f"adm{adm_lvl}_pcode"]
 
                 # add affected population to forecast data units
-                for forecast_data_unit in forecast_dataset.data_units:
-                    if (
-                        forecast_data_unit.adm_level == adm_lvl
-                        and forecast_data_unit.triggered
-                    ):
+                for forecast_data_unit in forecast_dataset.get_data_units_admin_level(adm_lvl):
+                    if forecast_data_unit.triggered:
                         try:
                             pop_affected = int(
                                 gdf_aff_pop.loc[forecast_data_unit.pcode, "sum"]
@@ -416,6 +410,10 @@ class Forecast:
     def forecast_station(
         self, discharge_dataset: StationDataSet, threshold_dataset: StationDataSet
     ) -> StationDataSet:
+        """
+        Forecast floods per GloFAS station based on river discharge data
+        1. determine if trigger level is reached, with which probability, and alert class
+        """
         os.makedirs(self.input_data_path, exist_ok=True)
         os.makedirs(self.output_data_path, exist_ok=True)
 
@@ -425,6 +423,8 @@ class Forecast:
     def __compute_triggers_station(
         self, discharge_dataset: StationDataSet, threshold_dataset: StationDataSet
     ) -> StationDataSet:
+        """Determine if trigger level is reached, its probability, and the alert class"""
+
         os.makedirs(self.input_data_path, exist_ok=True)
         os.makedirs(self.output_data_path, exist_ok=True)
         country = discharge_dataset.country
