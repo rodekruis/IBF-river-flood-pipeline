@@ -345,7 +345,7 @@ class Load:
             if event_name == "":
                 event_name = str(station_code)
 
-            print(
+            logging.info(
                 f"event {event_name}, type '{event_type}', lead time {lead_time_event}"
             )
             forecast_station = forecast_station_data.get_data_unit(
@@ -391,9 +391,6 @@ class Load:
                     self.ibf_api_post_request(
                         "admin-area-dynamic-data/exposure", body=body
                     )
-                    print(
-                        f"admin-area-dynamic-data/exposure: dynamicIndicator {indicator}, adm_level {adm_level}"
-                    )
             processed_pcodes = list(set(processed_pcodes))
 
             # send trigger per lead time: event/triggers-per-leadtime
@@ -421,9 +418,6 @@ class Load:
                 "date": upload_time,
             }
             self.ibf_api_post_request("event/triggers-per-leadtime", body=body)
-            print(
-                f"event/triggers-per-leadtime: triggersPerLeadTime {triggers_per_lead_time}"
-            )
 
             # GloFAS station data: point-data/dynamic
             # 1 call per alert/triggered station, and 1 overall (to same endpoint) for all other stations
@@ -462,9 +456,6 @@ class Load:
                         "date": upload_time,
                     }
                     self.ibf_api_post_request("point-data/dynamic", body=body)
-                    print(
-                        f"point-data/dynamic: key {indicator}, dynamicPointData {station_forecasts[indicator]}"
-                    )
                     processed_stations.append(station_code)
 
         # END OF EVENT LOOP
@@ -563,9 +554,6 @@ class Load:
                 "date": upload_time,
             }
             self.ibf_api_post_request("point-data/dynamic", body=body)
-            print(
-                f"point-data/dynamic: key {indicator}, dynamicPointData {station_forecasts[indicator]}"
-            )
 
         # close events: event/close-events
         body = {
@@ -788,6 +776,7 @@ class Load:
         return datasets[-1]
 
     def __get_blob_service_client(self, blob_path: str):
+        """Get service client for Azure Blob Storage"""
         blob_service_client = BlobServiceClient.from_connection_string(
             f"DefaultEndpointsProtocol=https;"
             f'AccountName={self.secrets.get_secret("BLOB_ACCOUNT_NAME")};'
