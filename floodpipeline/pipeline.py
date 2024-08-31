@@ -121,5 +121,5 @@ class Pipeline:
                 discharge_data=discharge_dataset,
                 forecast_station_data=forecast_station_dataset,
                 discharge_station_data=discharge_station_dataset,
-                flood_extent=self.forecast.flood_extent_filepath,
+                flood_extent=self.forecast.flood_extent_raster,
             )
