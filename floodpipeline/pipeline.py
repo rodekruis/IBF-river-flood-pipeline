@@ -47,10 +47,6 @@ class Pipeline:
             discharge_dataset, discharge_station_dataset = (
                 self.extract.extract_glofas_data(country=country)
             )
-            for ds in discharge_dataset.data_units:
-                print(vars(ds))
-            for ds in discharge_station_dataset.data_units:
-                print(vars(ds))
             if save:
                 logging.info("save discharge data to storage")
                 self.load.save_pipeline_data(

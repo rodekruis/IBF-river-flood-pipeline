@@ -77,14 +77,16 @@ class Scenario:
         value = self.get_discharge_per_return_period(
             station=station, return_period=return_period
         )
-        discharge_station = self.discharge_station_dataset.get_data_unit(station, lead_time)
+        discharge_station = self.discharge_station_dataset.get_data_unit(
+            station, lead_time
+        )
         ensemble_values = [random.gauss(value, value * 0.1) for _ in range(self.noEns)]
         while get_ensemble_likelihood(ensemble_values, value) < probability:
             ensemble_values = [e * 1.01 for e in ensemble_values]
         discharge_station.discharge_ensemble = ensemble_values
         discharge_station.discharge_mean = sum(ensemble_values) / len(ensemble_values)
         self.discharge_station_dataset.upsert_data_unit(discharge_station)
-        
+
         for adm_level in discharge_station.pcodes.keys():
             for pcode in discharge_station.pcodes[adm_level]:
                 value = self.get_discharge_per_return_period(
@@ -97,7 +99,9 @@ class Scenario:
                 while get_ensemble_likelihood(ensemble_values, value) < probability:
                     ensemble_values = [e * 1.01 for e in ensemble_values]
                 discharge_admin.discharge_ensemble = ensemble_values
-                discharge_admin.discharge_mean = sum(ensemble_values) / len(ensemble_values)
+                discharge_admin.discharge_mean = sum(ensemble_values) / len(
+                    ensemble_values
+                )
                 self.discharge_dataset.upsert_data_unit(discharge_admin)
 
     def get_random_stations(self, n):
@@ -136,21 +140,15 @@ class Scenario:
         trigger_on_return_period = self.pipe.settings.get_country_setting(
             self.country, "trigger-on-return-period"
         )
-        trigger_on_probability = (
-            self.pipe.settings.get_country_setting(
-                self.country, "trigger-on-minimum-probability"
-            )
-            + 0.01
+        trigger_on_probability = self.pipe.settings.get_country_setting(
+            self.country, "trigger-on-minimum-probability"
         )
 
         alert_on_return_period = self.pipe.settings.get_country_setting(
             self.country, "alert-on-return-period"
         )
-        alert_on_probability = (
-            self.pipe.settings.get_country_setting(
-                self.country, "alert-on-minimum-probability"
-            )
-            + 0.01
+        alert_on_probability = self.pipe.settings.get_country_setting(
+            self.country, "alert-on-minimum-probability"
         )
         alert_classes = ["min", "med", "min", "med"]
 

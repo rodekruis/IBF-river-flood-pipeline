@@ -7,9 +7,7 @@ from scenarios import Scenario, SCENARIOS
 
 if not os.path.exists(".env"):
     print("credentials not found, run this test from root directory")
-pipe = Pipeline(
-    settings=Settings("config/config-template.yaml"), secrets=Secrets(".env")
-)
+pipe = Pipeline(settings=Settings("config/config.yaml"), secrets=Secrets(".env"))
 
 # SCENARIOS = [
 #     0 "nothing",
@@ -29,18 +27,18 @@ pipe = Pipeline(
 @click.option("--scenario", "-s", help="scenario", default=0)
 @click.option("--country", "-c", help="country", default="UGA")
 def upload_scenario(scenario, country):
-    
+
     try:
         scenario = Scenario(
             scenario=SCENARIOS[scenario],
             country=country,
-            settings=Settings("config/config-template.yaml"),
+            settings=Settings("config/config.yaml"),
             secrets=Secrets(".env"),
         )
     except IndexError:
         print(f"scenario {scenario} not found")
         return
-    
+
     print(f"get mock data for scenario: {scenario.scenario}")
     discharge_dataset, discharge_station_dataset = scenario.get_discharge_scenario(
         random_stations=False, stations=["G5075", "G5220"]
@@ -48,9 +46,11 @@ def upload_scenario(scenario, country):
     # for du in discharge_dataset.data_units:
     #     if du.discharge_mean > 100.0:
     #         print(vars(du))
-    
+
     print(f"forecast floods")
-    thresholds_dataset = pipe.load.get_pipeline_data(data_type="threshold", country=country)
+    thresholds_dataset = pipe.load.get_pipeline_data(
+        data_type="threshold", country=country
+    )
     thresholds_station_dataset = pipe.load.get_pipeline_data(
         data_type="threshold-station", country=country
     )
@@ -65,14 +65,14 @@ def upload_scenario(scenario, country):
     # for du in forecast_dataset.data_units:
     #     if du.triggered:
     #         print(vars(du))
-    
+
     print(f"send to IBF API")
     pipe.load.send_to_ibf_api(
         forecast_data=forecast_dataset,
         discharge_data=discharge_dataset,
         forecast_station_data=forecast_station_dataset,
         discharge_station_data=discharge_station_dataset,
-        flood_extent=pipe.forecast.flood_extent_filepath,
+        # flood_extent=pipe.forecast.flood_extent_raster,
     )
 
 

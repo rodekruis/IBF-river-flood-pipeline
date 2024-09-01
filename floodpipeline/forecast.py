@@ -58,20 +58,58 @@ def clip_raster(raster_filepath: str, shapes: List[Polygon]) -> tuple:
 
 def classify_alert(
     likelihood_per_return_period: dict,
-    alert_on_return_period: dict,
-    alert_on_minimum_probability: float,
+    classify_alert_on: str,
+    alert_on_return_period,
+    alert_on_minimum_probability,
 ) -> str:
     """
     Classify alert based on flood forecast return period specified in settings.py
     """
-    alert_on_return_period = {
-        k: v
-        for k, v in sorted(alert_on_return_period.items(), key=lambda item: item[1])
-    }  # order by return period, from smallest to largest
     alert_class = "no"
-    for class_, return_period in alert_on_return_period.items():
-        if likelihood_per_return_period[return_period] >= alert_on_minimum_probability:
-            alert_class = class_
+    if classify_alert_on == "return-period":
+        if (
+            type(alert_on_return_period) != dict
+            and type(alert_on_minimum_probability) != float
+        ):
+            raise ValueError(
+                "to classify alerts on return period, alert-on-return-period should be a dictionary "
+                "and alert-on-minimum-probability should be a float"
+            )
+        alert_on_return_period = {
+            k: v
+            for k, v in sorted(alert_on_return_period.items(), key=lambda item: item[1])
+        }  # order by return period, from smallest to largest
+        for class_, return_period in alert_on_return_period.items():
+            if (
+                likelihood_per_return_period[return_period]
+                >= alert_on_minimum_probability
+            ):
+                alert_class = class_
+    elif classify_alert_on == "probability":
+        if (
+            type(alert_on_minimum_probability) != dict
+            and type(alert_on_return_period) != float
+        ):
+            raise ValueError(
+                "to classify alerts on minimum probability, alert-on-minimum-probability should be a dictionary "
+                "and alert-on-return-period should be a float"
+            )
+        alert_on_minimum_probability = {
+            k: v
+            for k, v in sorted(
+                alert_on_minimum_probability.items(), key=lambda item: item[1]
+            )
+        }  # order by probability, from smallest to largest
+        for class_, minimum_probability in alert_on_minimum_probability.items():
+            if (
+                likelihood_per_return_period[alert_on_return_period]
+                >= minimum_probability
+            ):
+                alert_class = class_
+    else:
+        raise ValueError(
+            "classify-alert-on should be either 'return-period' or 'probability'"
+        )
     return alert_class
 
 
@@ -146,6 +184,9 @@ class Forecast:
         trigger_on_minimum_probability = self.settings.get_country_setting(
             country, "trigger-on-minimum-probability"
         )
+        classify_alert_on = self.settings.get_country_setting(
+            country, "classify-alert-on"
+        )
         alert_on_return_period = self.settings.get_country_setting(
             country, "alert-on-return-period"
         )
@@ -159,6 +200,7 @@ class Forecast:
                 discharge_data_unit = discharges.get_data_unit(pcode, lead_time)
                 adm_level = discharge_data_unit.adm_level
 
+                # calculate likelihood per return period
                 likelihood_per_return_period, forecasts = {}, []
                 for threshold in threshold_data_unit.thresholds:
                     threshold_checks = map(
@@ -176,13 +218,7 @@ class Forecast:
                         )
                     )
 
-                # START: TO BE DEPRECATED
-                if trigger_on_return_period not in likelihood_per_return_period.keys():
-                    raise ValueError(
-                        f"No threshold found for return period {trigger_on_return_period}, "
-                        f"which defines trigger in config file (trigger-on-return-period). "
-                        f"Thresholds found: {likelihood_per_return_period.keys()}"
-                    )
+                # determine if triggered and the corresponding return period
                 triggered = (
                     True
                     if likelihood_per_return_period[trigger_on_return_period]
@@ -198,43 +234,28 @@ class Forecast:
                     ),
                     0.0,
                 )
-                if any(
-                    rp not in likelihood_per_return_period.keys()
-                    for rp in alert_on_return_period.values()
-                ):
-                    missing_rps = [
-                        rp
-                        for rp in alert_on_return_period.values()
-                        if rp not in likelihood_per_return_period.keys()
-                    ]
-                    raise ValueError(
-                        f"No threshold found for return periods {missing_rps}, "
-                        f"which define alert classes in config file (alert-on-return-period). "
-                        f"Thresholds found: {likelihood_per_return_period.keys()}"
-                    )
+
+                # determine the alert class
                 alert_class = classify_alert(
                     likelihood_per_return_period,
+                    classify_alert_on,
                     alert_on_return_period,
                     alert_on_minimum_probability,
                 )
-                # END: TO BE DEPRECATED
+
                 forecast_data_unit = ForecastDataUnit(
                     adm_level=adm_level,
                     pcode=pcode,
                     lead_time=lead_time,
                     forecasts=forecasts,
-                    # START: TO BE DEPRECATED
                     triggered=triggered,
                     return_period=return_period,
                     alert_class=alert_class,
-                    # END: TO BE DEPRECATED
                 )
                 forecast_dataset.upsert_data_unit(forecast_data_unit)
         return forecast_dataset
 
-    def __compute_flood_extent(
-        self, country: str, forecast_dataset: AdminDataSet
-    ):
+    def __compute_flood_extent(self, country: str, forecast_dataset: AdminDataSet):
         """Compute flood extent raster"""
         # get country-wide flood extent rasters
         if country != forecast_dataset.country:
@@ -243,7 +264,7 @@ class Forecast:
             )
         if os.path.exists(self.flood_extent_raster):
             os.remove(self.flood_extent_raster)
-            
+
         flood_rasters = {}
         for rp in [10, 20, 50, 75, 100, 200, 500]:
             flood_raster_filepath = (
@@ -252,7 +273,8 @@ class Forecast:
             if not os.path.exists(flood_raster_filepath):
                 self.load.get_from_blob(
                     flood_raster_filepath,
-                    f"{self.settings.get_setting('blob_storage_path')}/flood-maps/{country.upper()}/flood_map_{country.upper()}_RP{rp}.tif",
+                    f"{self.settings.get_setting('blob_storage_path')}"
+                    f"/flood-maps/{country.upper()}/flood_map_{country.upper()}_RP{rp}.tif",
                 )
             flood_rasters[rp] = flood_raster_filepath
         flood_rasters_admin_div = []
@@ -263,7 +285,9 @@ class Forecast:
             gdf_adm.index = gdf_adm[f"adm{adm_lvl}_pcode"]
 
             # calculate flood extent for each triggered admin division
-            for forecast_data_unit in forecast_dataset.get_data_units_admin_level(adm_lvl):
+            for forecast_data_unit in forecast_dataset.get_data_units_admin_level(
+                adm_lvl
+            ):
                 if forecast_data_unit.triggered:
                     adm_bounds = gdf_adm.loc[forecast_data_unit.pcode, "geometry"]
                     rp = forecast_data_unit.return_period
@@ -300,7 +324,10 @@ class Forecast:
                 dest.write(flood_raster_data)
             # delete intermediate files
             for file in flood_rasters_admin_div:
-                os.remove(file)
+                try:
+                    os.remove(file)
+                except FileNotFoundError:
+                    pass
         else:
             # create empty raster
             with rasterio.open(list(flood_rasters.values())[0]) as src:
@@ -388,7 +415,9 @@ class Forecast:
                 gdf_pop.index = gdf_pop[f"adm{adm_lvl}_pcode"]
 
                 # add affected population to forecast data units
-                for forecast_data_unit in forecast_dataset.get_data_units_admin_level(adm_lvl):
+                for forecast_data_unit in forecast_dataset.get_data_units_admin_level(
+                    adm_lvl
+                ):
                     if forecast_data_unit.triggered:
                         try:
                             pop_affected = int(
@@ -406,7 +435,7 @@ class Forecast:
                         )
 
         return forecast_dataset
-    
+
     def forecast_station(
         self, discharge_dataset: StationDataSet, threshold_dataset: StationDataSet
     ) -> StationDataSet:
@@ -417,9 +446,11 @@ class Forecast:
         os.makedirs(self.input_data_path, exist_ok=True)
         os.makedirs(self.output_data_path, exist_ok=True)
 
-        forecast_dataset = self.__compute_triggers_station(discharge_dataset, threshold_dataset)
+        forecast_dataset = self.__compute_triggers_station(
+            discharge_dataset, threshold_dataset
+        )
         return forecast_dataset
-    
+
     def __compute_triggers_station(
         self, discharge_dataset: StationDataSet, threshold_dataset: StationDataSet
     ) -> StationDataSet:
@@ -453,12 +484,14 @@ class Forecast:
                     FloodForecast(return_period=return_period, likelihood=likelihood)
                 )
 
-            # START: TO BE DEPRECATED
             trigger_on_return_period = self.settings.get_country_setting(
                 country, "trigger-on-return-period"
             )
             trigger_on_minimum_probability = self.settings.get_country_setting(
                 country, "trigger-on-minimum-probability"
+            )
+            classify_alert_on = self.settings.get_country_setting(
+                country, "classify-alert-on"
             )
             alert_on_return_period = self.settings.get_country_setting(
                 country, "alert-on-return-period"
@@ -472,6 +505,8 @@ class Forecast:
                     f"which defines trigger in config file (trigger-on-return-period). "
                     f"Thresholds found: {likelihood_per_return_period.keys()}"
                 )
+
+            # determine if triggered and the corresponding return period
             triggered = (
                 True
                 if likelihood_per_return_period[trigger_on_return_period]
@@ -487,26 +522,15 @@ class Forecast:
                 ),
                 0.0,
             )
-            if any(
-                rp not in likelihood_per_return_period.keys()
-                for rp in alert_on_return_period.values()
-            ):
-                missing_rps = [
-                    rp
-                    for rp in alert_on_return_period.values()
-                    if rp not in likelihood_per_return_period.keys()
-                ]
-                raise ValueError(
-                    f"No threshold found for return periods {missing_rps}, "
-                    f"which define alert classes in config file (alert-on-return-period). "
-                    f"Thresholds found: {likelihood_per_return_period.keys()}"
-                )
+
+            # determine the alert class
             alert_class = classify_alert(
                 likelihood_per_return_period,
+                classify_alert_on,
                 alert_on_return_period,
                 alert_on_minimum_probability,
             )
-            # END: TO BE DEPRECATED
+
             forecast_data_unit = ForecastStationDataUnit(
                 station_code=discharge_station.station_code,
                 station_name=discharge_station.station_name,
@@ -515,12 +539,9 @@ class Forecast:
                 pcodes=discharge_station.pcodes,
                 lead_time=lead_time,
                 forecasts=forecasts,
-                # START: TO BE DEPRECATED
                 triggered=triggered,
                 return_period=return_period,
                 alert_class=alert_class,
-                # END: TO BE DEPRECATED
             )
             forecast_dataset.upsert_data_unit(forecast_data_unit)
         return forecast_dataset
-    
