@@ -2,14 +2,27 @@
 
 Forecast river or fluvial flooding. Part of [IBF-system](https://github.com/rodekruis/IBF-system).
 
+## TO-DO
+
+* put datasets together in pipeline base class
+
 ## Description
 
 The pipeline roughly consists of three steps:
-* Extract data on river [discharge](https://en.wikipedia.org/wiki/Discharge_(hydrology)) from an external provider (GloFAS), both in specific locations (`stations`) and over administrative areas.
-* Forecast river floods by determining if the river discharge is higher than pre-defined `thresholds`; if so, calculate flood extent and impact (affected people).
+* Extract data on [river discharge](https://en.wikipedia.org/wiki/Discharge_(hydrology)) from an external provider, both in specific locations (_stations_) and over pre-defined areas (_administrative divisions_).
+* Forecast floods by determining if the river discharge is higher than pre-defined _thresholds_; if so, calculate flood extent and impact (_affected people_).
 * Send this data to the IBF app.
 
-See functional architecture in the image below.
+The pipeline stores data in:
+* [ibf-cosmos](https://portal.azure.com/#@rodekruis.onmicrosoft.com/resource/subscriptions/57b0d17a-5429-4dbb-8366-35c928e3ed94/resourceGroups/IBF-system/overview) (Azure Cosmos DB): river discharge per station / administrative division, flood forecasts, and trigger thresholds
+* [510ibfsystem](https://portal.azure.com/#@rodekruis.onmicrosoft.com/resource/subscriptions/57b0d17a-5429-4dbb-8366-35c928e3ed94/resourceGroups/IBF-system/providers/Microsoft.Storage/storageAccounts/510ibfsystem/overview) (Azure Storage Account): raw data from GloFAS and other geospatial data 
+
+The pipeline depends on the following services:
+* [GloFAS](https://global-flood.emergency.copernicus.eu/): provides river discharge forecasts
+* [Glofas data pipeline](https://adf.azure.com/en/authoring/pipeline/GloFAS%20data%20pipeline?factory=%2Fsubscriptions%2F57b0d17a-5429-4dbb-8366-35c928e3ed94%2FresourceGroups%2FIBF-system%2Fproviders%2FMicrosoft.DataFactory%2Ffactories%2FIBF-data-factory) in IBF-data-factory (Azure Data Factory): extracts GloFAS data and stores it in `510ibfsystem`
+* IBF-app 
+
+For more information, see the [functional architecture diagram](https://miro.com/app/board/uXjVK7Valso=/?moveToWidget=3458764592859255828&cot=14).
 
 ## Basic Usage
 
@@ -36,12 +49,24 @@ Options:
 
 ## Advanced Usage
 
-### How do I set up a new country?
+### How do I set up the pipeline for a new country?
 
-First, create the historical flood extent maps that the pipeline needs to create flood extents
+1. Check that the administrative boundaries are in the IBF system; if not, ask developers to add them
+2. Add country-specific configuration in `config/config.yaml`
+3. Create historical flood extent maps
 ```
-python data_updates\add_flood_maps.py --country KEN
+python data_updates\add_flood_maps.py --country <country ISO3>
 ```
-## 
+3. Compute trigger and alert thresholds
+```
+python data_updates\add_flood_thresholds.py --country <country ISO3>
+```
+4. Update [`Glofas data pipeline`](https://adf.azure.com/en/authoring/pipeline/GloFAS%20data%20pipeline?factory=%2Fsubscriptions%2F57b0d17a-5429-4dbb-8366-35c928e3ed94%2FresourceGroups%2FIBF-system%2Fproviders%2FMicrosoft.DataFactory%2Ffactories%2FIBF-data-factory) in IBF-data-factory so that it will trigger a pipeline run for the new country
 
-![image](https://github.com/user-attachments/assets/798f0641-704e-48b5-96d7-963a78d83b58)
+### How do I insert an exception for a specific country?
+
+You don't. The pipeline is designed to work in the same way for all countries.
+If you need to change the pipeline's behavior for a specific country, please discuss your needs with your fellow data specialist, they will try their best to accommodate your request.
+
+### There is a new version of GloFAS, how do I update the pipeline?
+

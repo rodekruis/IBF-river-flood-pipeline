@@ -1,7 +1,6 @@
 import requests
 import os
-from datetime import datetime
-import zipfile
+import click
 import numpy as np
 import rasterio
 import geopandas as gpd
@@ -14,7 +13,7 @@ import re
 
 RETURN_PERIODS = [10, 20, 50, 75, 100, 200, 500]
 secrets = Secrets()
-settings = Settings("config/config-template.yaml")
+settings = Settings("config/config.yaml")
 load = Load(settings=settings, secrets=secrets)
 
 
@@ -45,19 +44,29 @@ def get_global_flood_maps(rp: int) -> gpd.GeoDataFrame:
     return gdf_flood_map
 
 
-def add_flood_maps():
+@click.command()
+@click.option("--country", "-c", help="country ISO3", default="all")
+def add_flood_maps(country):
 
     os.makedirs("data/updates", exist_ok=True)
     load = Load(settings=settings, secrets=secrets)
 
+    if country != "all" and country not in [
+        c["name"] for c in settings.get_setting("countries")
+    ]:
+        raise ValueError(f"No config found for country {country}")
+
     for country_settings in settings.get_setting("countries"):
 
-        country = list(country_settings.keys())[0]
-        print("Adding flood maps for", country)
+        if country != "all" and country != country_settings["name"]:
+            continue
+
+        country_name = country_settings["name"]
+        print("Adding flood maps for", country_name)
 
         for rp in RETURN_PERIODS:
             gdf_flood_map = get_global_flood_maps(rp=int(rp))
-            country_gdf = load.get_adm_boundaries(country=country, adm_level=1)
+            country_gdf = load.get_adm_boundaries(country=country_name, adm_level=1)
             country_gdf = country_gdf.to_crs("EPSG:4326")
 
             # filter global flood maps based on country boundary
@@ -72,26 +81,22 @@ def add_flood_maps():
                 # download
                 flood_map_filepath = f"data/updates/{flood_map_file}"
                 url = f"{settings.get_setting('global_flood_maps_url')}/RP{rp}/{flood_map_file}"
-                if not os.path.exists(flood_map_filepath):
-                    r = requests.get(url)
-                    with open(flood_map_filepath, "wb") as file:
-                        file.write(r.content)
+                r = requests.get(url)
+                with open(flood_map_filepath, "wb") as file:
+                    file.write(r.content)
                 # clip
                 flood_map_clipped_filepath = f"data/updates/{flood_map_file}".replace(
                     ".tif", "_clipped.tif"
                 )
-                if not os.path.exists(flood_map_clipped_filepath):
-                    clip, out_meta = clip_raster(
-                        flood_map_filepath, [country_gdf.geometry.union_all()]
-                    )
-                    with rasterio.open(
-                        flood_map_clipped_filepath, "w", **out_meta
-                    ) as dest:
-                        dest.write(clip)
+                clip, out_meta = clip_raster(
+                    flood_map_filepath, [box(*country_gdf.total_bounds)]
+                )
+                with rasterio.open(flood_map_clipped_filepath, "w", **out_meta) as dest:
+                    dest.write(clip)
                 flood_map_filepaths.append(flood_map_clipped_filepath)
 
             # merge flood maps
-            merged_raster_filepath = f"data/updates/flood_map_RP{rp}.tif"
+            merged_raster_filepath = f"data/updates/flood_map_{country_name}_RP{rp}.tif"
             mosaic, out_meta = merge_rasters(flood_map_filepaths)
             mosaic = np.nan_to_num(mosaic)
             out_meta.update(dtype=rasterio.float32, count=1, compress="lzw")  # compress
@@ -101,7 +106,8 @@ def add_flood_maps():
             # save to blob storage
             load.save_to_blob(
                 local_path=merged_raster_filepath,
-                file_dir_blob=f"flood/pipeline-input/flood-maps/{country}/flood_map_{country}_RP{int(rp)}.tif",
+                file_dir_blob=f"{settings.get_setting('blob_storage_path')}"
+                f"/flood-maps/{country_name}/flood_map_{country_name}_RP{int(rp)}.tif",
             )
 
 

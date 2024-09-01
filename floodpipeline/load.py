@@ -15,7 +15,7 @@ from floodpipeline.data import (
     DischargeStationDataUnit,
 )
 from urllib.error import HTTPError
-from sqlalchemy.exc import ProgrammingError
+import urllib.request, json
 from datetime import datetime, timedelta, date
 import azure.cosmos.cosmos_client as cosmos_client
 import logging
@@ -25,6 +25,7 @@ import requests
 import geopandas as gpd
 from shapely import Point
 from typing import List
+from shapely.geometry import shape
 from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import ResourceNotFoundError
 
@@ -129,7 +130,6 @@ class Load:
                 "COSMOS_KEY",
                 "BLOB_ACCOUNT_NAME",
                 "BLOB_ACCOUNT_KEY",
-                "BLOB_CONTAINER_NAME",
                 "IBF_API_URL",
                 "IBF_API_USER",
                 "IBF_API_PASSWORD",
@@ -152,10 +152,15 @@ class Load:
     def get_adm_boundaries(self, country: str, adm_level: int) -> gpd.GeoDataFrame:
         """Get administrative boundaries from IBF API"""
         try:
-            gdf = gpd.read_file(
+            with urllib.request.urlopen(
                 f"https://raw.githubusercontent.com/rodekruis/IBF-system/master/services/API-service/src/scripts/git-lfs/admin-boundaries/{country}_adm{adm_level}.json"
-            )
-            gdf = gdf.rename(columns={f"ADM{adm_level}_PCODE": f"adm{adm_level}_pcode"})
+            ) as url:
+                data = json.load(url)
+                for ix, record in enumerate(data["features"]):
+                    data["features"][ix]["geometry"]["type"] = "MultiPolygon"
+                gdf = gpd.GeoDataFrame.from_features(data)
+                gdf.columns = map(str.lower, gdf.columns)
+                gdf.set_crs(epsg=4326, inplace=True)
         except HTTPError:
             raise FileNotFoundError(
                 f"Administrative boundaries for country {country} "
@@ -340,7 +345,9 @@ class Load:
             # set as alert if lead time is greater than trigger_on_lead_time
             if lead_time_event > trigger_on_lead_time and event_type == "trigger":
                 event_type = "alert"
-            station_name = forecast_station_data.get_data_unit(station_code, trigger_on_lead_time).station_name
+            station_name = forecast_station_data.get_data_unit(
+                station_code, trigger_on_lead_time
+            ).station_name
             event_name = str(station_name) if station_name else str(station_code)
             if event_name == "":
                 event_name = str(station_code)
@@ -374,7 +381,7 @@ class Load:
                         elif indicator == "alert_threshold":
                             amount = alert_class_to_threshold(
                                 alert_class=forecast_admin.alert_class,
-                                triggered=True if event_type == "trigger" else False
+                                triggered=True if event_type == "trigger" else False,
                             )
                         exposure_pcodes.append({"placeCode": pcode, "amount": amount})
                         processed_pcodes.append(pcode)
@@ -442,9 +449,9 @@ class Load:
                     elif indicator == "forecastReturnPeriod":
                         value = forecast_station.return_period
                     elif indicator == "triggerLevel":
-                        value = int(threshold_station.get_threshold(
-                            trigger_on_return_period
-                        ))
+                        value = int(
+                            threshold_station.get_threshold(trigger_on_return_period)
+                        )
                     station_data = {"fid": station_code, "value": value}
                     station_forecasts[indicator].append(station_data)
                     body = {
@@ -482,19 +489,13 @@ class Load:
                     exposure_pcodes = []
                     for pcode in forecast_data.get_pcodes(adm_level=adm_level):
                         if pcode not in processed_pcodes:
-                            forecast_data_unit = forecast_data.get_data_unit(
-                                pcode, trigger_on_lead_time
-                            )
                             amount = None
                             if indicator == "population_affected":
-                                amount = forecast_data_unit.pop_affected
+                                amount = 0
                             elif indicator == "population_affected_percentage":
-                                amount = forecast_data_unit.pop_affected_perc
+                                amount = 0.0
                             elif indicator == "alert_threshold":
-                                amount = alert_class_to_threshold(
-                                    alert_class=forecast_data_unit.alert_class,
-                                    triggered=False
-                                )
+                                amount = 0.0
                             exposure_pcodes.append(
                                 {"placeCode": pcode, "amount": amount}
                             )
@@ -539,9 +540,9 @@ class Load:
                     elif indicator == "forecastReturnPeriod":
                         value = forecast_station.return_period
                     elif indicator == "triggerLevel":
-                        value = int(threshold_station.get_threshold(
-                            trigger_on_return_period
-                        ))
+                        value = int(
+                            threshold_station.get_threshold(trigger_on_return_period)
+                        )
                     station_data = {"fid": station_code, "value": value}
                     station_forecasts[indicator].append(station_data)
 
@@ -783,7 +784,7 @@ class Load:
             f'AccountKey={self.secrets.get_secret("BLOB_ACCOUNT_KEY")};'
             f"EndpointSuffix=core.windows.net"
         )
-        container = self.secrets.get_secret("BLOB_CONTAINER_NAME")
+        container = self.settings.get_setting("blob_container")
         return blob_service_client.get_blob_client(container=container, blob=blob_path)
 
     def save_to_blob(self, local_path: str, file_dir_blob: str):
@@ -801,4 +802,6 @@ class Load:
             try:
                 download_file.write(blob_client.download_blob().readall())
             except ResourceNotFoundError:
-                raise FileNotFoundError(f"File {blob_path} not found in Azure Blob Storage")
+                raise FileNotFoundError(
+                    f"File {blob_path} not found in Azure Blob Storage"
+                )

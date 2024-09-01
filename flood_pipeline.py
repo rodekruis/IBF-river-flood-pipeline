@@ -12,9 +12,7 @@ import click
 @click.option("--send", help="send to IBF", default=False, is_flag=True)
 @click.option("--save", help="save to storage", default=False, is_flag=True)
 def run_river_flood_pipeline(country, prepare, extract, forecast, send, save):
-    pipe = Pipeline(
-        settings=Settings("config/config-template.yaml"), secrets=Secrets(".env")
-    )
+    pipe = Pipeline(settings=Settings("config/config.yaml"), secrets=Secrets(".env"))
     pipe.run_pipeline(
         country=country,
         prepare=prepare,

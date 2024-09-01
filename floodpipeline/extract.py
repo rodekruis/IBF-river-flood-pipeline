@@ -226,7 +226,6 @@ class Extract:
         logging.info(f"start preparing GloFAS data for country {country}")
         country_gdf = self.load.get_adm_boundaries(country=country, adm_level=1)
         no_ens = self.settings.get_setting("no_ensemble_members")
-        blob_path = self.settings.get_setting("blob_storage_path")
         date = datetime.today().strftime("%Y%m%d")
         for ensemble in range(0, no_ens):
             # Download netcdf file
@@ -234,7 +233,8 @@ class Extract:
             try:
                 self.load.get_from_blob(
                     filename_local,
-                    f"{blob_path}/glofas-data/{date}/dis_{'{:02d}'.format(ensemble)}_{date}00.nc",
+                    f"{self.settings.get_setting('blob_storage_path')}"
+                    f"/glofas-data/{date}/dis_{'{:02d}'.format(ensemble)}_{date}00.nc",
                 )
             except FileNotFoundError:
                 logging.warning(
