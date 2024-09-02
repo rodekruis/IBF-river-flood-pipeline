@@ -1,5 +1,7 @@
 from datetime import datetime
 from typing import List, TypedDict
+from floodpipeline.settings import Settings
+from floodpipeline.secrets import Secrets
 
 
 class AdminDataUnit:
@@ -176,7 +178,7 @@ class AdminDataSet:
         if not self.data_units:
             raise ValueError("Data units not found")
         return list(filter(lambda x: x.lead_time == lead_time, self.data_units))
-    
+
     def get_data_units_admin_level(self, adm_level: int = None):
         """Return list of data units filtered by admin leve"""
         if not self.data_units:
@@ -232,7 +234,7 @@ class AdminDataSet:
             self.data_units.append(data_unit)
         else:
             self.data_units[bdu[0]] = data_unit
-            
+
     def is_any_triggered(self):
         """Check if any data unit is triggered"""
         if not self.data_units:
@@ -318,4 +320,35 @@ class StationDataSet:
         """Return list of unique station codes"""
         return list(
             set([x.station_code for x in self.data_units if hasattr(x, "station_code")])
+        )
+
+
+class PipelineDataSets:
+    """Collection of datasets used by the pipeline"""
+
+    def __init__(self, country: str, settings: Settings):
+        self.country = country
+        self.discharge_admin = AdminDataSet(
+            country=self.country,
+            timestamp=datetime.today(),
+            adm_levels=settings.get_country_setting(country, "admin-levels"),
+        )
+        self.discharge_station = StationDataSet(
+            country=self.country, timestamp=datetime.today()
+        )
+        self.forecast_admin = AdminDataSet(
+            country=self.country,
+            timestamp=datetime.today(),
+            adm_levels=settings.get_country_setting(country, "admin-levels"),
+        )
+        self.forecast_station = StationDataSet(
+            country=self.country, timestamp=datetime.today()
+        )
+        self.threshold_admin = AdminDataSet(
+            country=self.country,
+            timestamp=datetime.today(),
+            adm_levels=settings.get_country_setting(country, "admin-levels"),
+        )
+        self.threshold_station = StationDataSet(
+            country=self.country, timestamp=datetime.today()
         )

@@ -1,9 +1,8 @@
 from floodpipeline.secrets import Secrets
 from floodpipeline.settings import Settings
 from floodpipeline.data import (
-    AdminDataSet,
+    PipelineDataSets,
     DischargeDataUnit,
-    StationDataSet,
     DischargeStationDataUnit,
 )
 from floodpipeline.load import Load
@@ -37,7 +36,12 @@ def slice_netcdf_file(nc_file: xr.Dataset, country_bounds: list):
 class Extract:
     """Extract river discharge data from external sources"""
 
-    def __init__(self, settings: Settings = None, secrets: Secrets = None):
+    def __init__(
+        self,
+        settings: Settings = None,
+        secrets: Secrets = None,
+        data: PipelineDataSets = None,
+    ):
         self.source = None
         self.country = None
         self.secrets = None
@@ -52,6 +56,7 @@ class Extract:
         if secrets is not None:
             self.set_secrets(secrets)
             self.load.set_secrets(secrets)
+        self.data = data
 
     def set_settings(self, settings):
         """Set settings"""
@@ -92,39 +97,37 @@ class Extract:
             raise ValueError(f"Set secrets before setting source")
         return self
 
-    def get_data(self, country: str, source: str = None) -> AdminDataSet:
+    def get_data(self, country: str, source: str = None):
         """Get river discharge data from source and return AdminDataSet"""
         if source is None and self.source is None:
             raise RuntimeError("Source not specified, use set_source()")
         elif self.source is None and source is not None:
             self.source = source
         self.country = country
-        discharge_dataset, discharge_station_dataset = None, None
         if self.source == "GloFAS":
             self.prepare_glofas_data()
-            discharge_dataset, discharge_station_dataset = self.extract_glofas_data()
-        return discharge_dataset, discharge_station_dataset
+            self.extract_glofas_data()
 
-    def extract_glofas_data(self, country: str = None):
-        """Download GloFAS data for each ensemble member and map to AdminDataSet"""
+    def extract_glofas_data(self, country: str = None, debug: bool = False):
+        """
+        Download GloFAS data for each ensemble member
+        and extract river discharge data per admin division and station
+        """
         if country is None:
             country = self.country
-        discharge_dataset = AdminDataSet(
-            country=country,
-            timestamp=datetime.today(),
-            adm_levels=self.settings.get_country_setting(country, "admin-levels"),
-        )
-
-        discharge_station_dataset = self.load.get_stations(country=country)
 
         # Download pre-processed NetCDF files for each ensemble member
         no_ens = self.settings.get_setting("no_ensemble_members")
         date = datetime.today().strftime("%Y%m%d")
+        if debug:
+            no_ens = 1
+            date = (datetime.today() - timedelta(days=1)).strftime("%Y%m%d")
 
         # Extract data from NetCDF files
         logging.info("Extract admin-level river discharge from GloFAS data")
+
         discharges = {}
-        for adm_level in discharge_dataset.adm_levels:
+        for adm_level in self.data.discharge_admin.adm_levels:
             country_gdf = self.load.get_adm_boundaries(
                 country=country, adm_level=adm_level
             )
@@ -162,7 +165,7 @@ class Extract:
                 range(1, 8), list(country_gdf[f"adm{adm_level}_pcode"].unique())
             ):
                 key = f"{pcode}_{lead_time}"
-                discharge_dataset.upsert_data_unit(
+                self.data.discharge_admin.upsert_data_unit(
                     DischargeDataUnit(
                         adm_level=adm_level,
                         pcode=pcode,
@@ -172,6 +175,7 @@ class Extract:
                 )
 
         logging.info("Extract station-level river discharge from GloFAS data")
+
         discharges_stations = {}
         for ensemble in range(0, no_ens):
             filename = os.path.join(
@@ -179,47 +183,54 @@ class Extract:
                 f"GloFAS_{date}_{country}_{ensemble}.nc",
             )
             with rasterio.open(filename) as src:
-                for station in discharge_station_dataset.data_units:
-                    lead_time = int(station.lead_time)
-                    # Extract data for stations
-                    discharges = []
-                    for shiftx in [-0.01, 0.01]:
-                        for shifty in [-0.01, 0.01]:
-                            coords = [
-                                (
-                                    float(station.lon) + shiftx,
-                                    float(station.lat) + shifty,
+                for station_code in self.data.threshold_station.get_station_codes():
+                    station = self.data.threshold_station.get_data_unit(
+                        station_code=station_code
+                    )  # get station information from pre-loaded thresholds
+                    for lead_time in range(1, 8):
+                        # Extract data for stations
+                        discharges = []
+                        for shiftx in [-0.01, 0.01]:
+                            for shifty in [-0.01, 0.01]:
+                                coords = [
+                                    (
+                                        float(station.lon) + shiftx,
+                                        float(station.lat) + shifty,
+                                    )
+                                ]
+                                discharge = float(
+                                    [
+                                        x[0]
+                                        for x in src.sample(coords, indexes=lead_time)
+                                    ][0]
                                 )
-                            ]
-                            discharge = float(
-                                [x[0] for x in src.sample(coords, indexes=lead_time)][0]
-                            )
-                            discharges.append(discharge)
-                    key = f"{station.station_code}_{lead_time}"
-                    if key not in discharges_stations.keys():
-                        discharges_stations[key] = []
-                    discharges_stations[key].append(max(discharges))
+                                discharges.append(discharge)
+                        key = f"{station.station_code}_{lead_time}"
+                        if key not in discharges_stations.keys():
+                            discharges_stations[key] = []
+                        discharges_stations[key].append(max(discharges))
 
-        for station in discharge_station_dataset.data_units:
-            key = f"{station.station_code}_{station.lead_time}"
-            discharge_station_dataset.upsert_data_unit(
-                DischargeStationDataUnit(
-                    station_code=station.station_code,
-                    station_name=station.station_name,
-                    lat=station.lat,
-                    lon=station.lon,
-                    pcodes=station.pcodes,
-                    lead_time=station.lead_time,
-                    discharge_ensemble=discharges_stations[key],
-                )
+        for station_code in self.data.threshold_station.get_station_codes():
+            station = self.data.threshold_station.get_data_unit(
+                station_code=station_code
             )
+            for lead_time in range(1, 8):
+                key = f"{station_code}_{lead_time}"
+                self.data.discharge_station.upsert_data_unit(
+                    DischargeStationDataUnit(
+                        station_code=station_code,
+                        station_name=station.station_name,
+                        lat=station.lat,
+                        lon=station.lon,
+                        pcodes=station.pcodes,
+                        lead_time=lead_time,
+                        discharge_ensemble=discharges_stations[key],
+                    )
+                )
 
-        return discharge_dataset, discharge_station_dataset
-
-    def prepare_glofas_data(self, country: str = None):
+    def prepare_glofas_data(self, country: str = None, debug: bool = False):
         """
-        Download one netcdf file per ensemble member;
-        for each country, slice the data to the extent of country and save it to storage
+        For each ensemble member, download the global NetCDF file and slice it to the extent of the country
         """
         if country is None:
             country = self.country
@@ -227,8 +238,13 @@ class Extract:
         country_gdf = self.load.get_adm_boundaries(country=country, adm_level=1)
         no_ens = self.settings.get_setting("no_ensemble_members")
         date = datetime.today().strftime("%Y%m%d")
+        if debug:
+            no_ens = 1
+            date = (datetime.today() - timedelta(days=1)).strftime("%Y%m%d")
+
         for ensemble in range(0, no_ens):
             # Download netcdf file
+            logging.info(f"downloading GloFAS data for ensemble {ensemble}")
             filename_local = os.path.join(self.inputPathGrid, f"GloFAS_{ensemble}.nc")
             try:
                 self.load.get_from_blob(
@@ -241,6 +257,8 @@ class Extract:
                     f"NetCDF file of ensemble {ensemble} not found, skipping"
                 )
                 continue
+
+            logging.info(f"slicing GloFAS data for ensemble {ensemble}")
             nc_file = xr.open_dataset(filename_local)
 
             # Slice netcdf file to country boundaries

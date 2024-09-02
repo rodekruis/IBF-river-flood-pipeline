@@ -1,11 +1,10 @@
 from floodpipeline.secrets import Secrets
 from floodpipeline.settings import Settings
 from floodpipeline.data import (
-    AdminDataSet,
+    PipelineDataSets,
     ForecastDataUnit,
     FloodForecast,
     ForecastStationDataUnit,
-    StationDataSet,
 )
 from floodpipeline.load import Load
 from datetime import datetime
@@ -118,7 +117,12 @@ class Forecast:
     Forecast flood events based on river discharge data
     """
 
-    def __init__(self, settings: Settings = None, secrets: Secrets = None):
+    def __init__(
+        self,
+        settings: Settings = None,
+        secrets: Secrets = None,
+        data: PipelineDataSets = None,
+    ):
         self.secrets = None
         self.settings = None
         self.set_settings(settings)
@@ -129,6 +133,7 @@ class Forecast:
         self.flood_extent_raster: str = self.output_data_path + "/flood_extent.tif"
         self.pop_raster: str = self.input_data_path + "/population_density.tif"
         self.aff_pop_raster: str = self.output_data_path + "/affected_population.tif"
+        self.data = data
 
     def set_settings(self, settings):
         """Set settings"""
@@ -144,37 +149,31 @@ class Forecast:
         secrets.check_secrets([])
         self.secrets = secrets
 
-    def forecast(
-        self, discharge_dataset: AdminDataSet, threshold_dataset: AdminDataSet
-    ) -> AdminDataSet:
+    def compute_forecast(self):
+        """
+        Forecast floods based on river discharge data
+        """
+        os.makedirs(self.input_data_path, exist_ok=True)
+        os.makedirs(self.output_data_path, exist_ok=True)
+        self.compute_forecast_admin()
+        self.compute_forecast_station()
+
+    def compute_forecast_admin(self):
         """
         Forecast floods per admin division based on river discharge data
         1. determine if trigger level is reached, with which probability, and alert class
         2. compute flood extent
-        3. compute exposure (people affected)
+        3. compute people affected
         """
-        os.makedirs(self.input_data_path, exist_ok=True)
-        os.makedirs(self.output_data_path, exist_ok=True)
-        country = discharge_dataset.country
+        self.__compute_triggers()
+        self.__compute_flood_extent()
+        if self.data.forecast_admin.is_any_triggered():
+            self.__compute_affected_pop()
 
-        forecast_dataset = self.__compute_triggers(discharge_dataset, threshold_dataset)
-        self.__compute_flood_extent(country, forecast_dataset)
-        if forecast_dataset.is_any_triggered():
-            forecast_dataset = self.__compute_affected_pop(country, forecast_dataset)
-        return forecast_dataset
-
-    def __compute_triggers(
-        self,
-        discharges: AdminDataSet,
-        thresholds: AdminDataSet,
-    ) -> AdminDataSet:
+    def __compute_triggers(self):
         """Determine if trigger level is reached, its probability, and the alert class"""
 
-        country = discharges.country
-        adm_levels = discharges.adm_levels
-        forecast_dataset = AdminDataSet(
-            country=country, adm_levels=adm_levels, timestamp=datetime.today()
-        )
+        country = self.data.discharge_admin.country
         trigger_on_lead_time = self.settings.get_country_setting(
             country, "trigger-on-lead-time"
         )
@@ -194,10 +193,12 @@ class Forecast:
             country, "alert-on-minimum-probability"
         )
 
-        for pcode in discharges.get_pcodes():
-            threshold_data_unit = thresholds.get_data_unit(pcode)
-            for lead_time in discharges.get_lead_times():
-                discharge_data_unit = discharges.get_data_unit(pcode, lead_time)
+        for pcode in self.data.discharge_admin.get_pcodes():
+            threshold_data_unit = self.data.threshold_admin.get_data_unit(pcode)
+            for lead_time in self.data.discharge_admin.get_lead_times():
+                discharge_data_unit = self.data.discharge_admin.get_data_unit(
+                    pcode, lead_time
+                )
                 adm_level = discharge_data_unit.adm_level
 
                 # calculate likelihood per return period
@@ -252,16 +253,12 @@ class Forecast:
                     return_period=return_period,
                     alert_class=alert_class,
                 )
-                forecast_dataset.upsert_data_unit(forecast_data_unit)
-        return forecast_dataset
+                self.data.forecast_admin.upsert_data_unit(forecast_data_unit)
 
-    def __compute_flood_extent(self, country: str, forecast_dataset: AdminDataSet):
+    def __compute_flood_extent(self):
         """Compute flood extent raster"""
         # get country-wide flood extent rasters
-        if country != forecast_dataset.country:
-            raise ValueError(
-                f"Country {country} does not match flood forecast dataset country {forecast_dataset.country}"
-            )
+        country = self.data.forecast_admin.country
         if os.path.exists(self.flood_extent_raster):
             os.remove(self.flood_extent_raster)
 
@@ -278,16 +275,18 @@ class Forecast:
                 )
             flood_rasters[rp] = flood_raster_filepath
         flood_rasters_admin_div = []
-        for adm_lvl in forecast_dataset.adm_levels:
+        for adm_lvl in self.data.forecast_admin.adm_levels:
 
             # get adm boundaries
-            gdf_adm = self.load.get_adm_boundaries(forecast_dataset.country, adm_lvl)
+            gdf_adm = self.load.get_adm_boundaries(
+                self.data.forecast_admin.country, adm_lvl
+            )
             gdf_adm.index = gdf_adm[f"adm{adm_lvl}_pcode"]
 
             # calculate flood extent for each triggered admin division
-            for forecast_data_unit in forecast_dataset.get_data_units_admin_level(
-                adm_lvl
-            ):
+            for (
+                forecast_data_unit
+            ) in self.data.forecast_admin.get_data_units_admin_level(adm_lvl):
                 if forecast_data_unit.triggered:
                     adm_bounds = gdf_adm.loc[forecast_data_unit.pcode, "geometry"]
                     rp = forecast_data_unit.return_period
@@ -341,8 +340,9 @@ class Forecast:
             ) as dest:
                 dest.write(flood_raster_data)
 
-    def __compute_affected_pop_raster(self, country: str):
+    def __compute_affected_pop_raster(self):
         """Compute affected population raster given a flood extent"""
+        country = self.data.forecast_admin.country
         # get population density raster
         self.load.get_population_density(country, self.pop_raster)
         # convert flood extent raster to vector (list of shapes)
@@ -365,21 +365,20 @@ class Forecast:
         with rasterio.open(self.aff_pop_raster, "w", **affected_pop_meta) as dest:
             dest.write(affected_pop_raster)
 
-    def __compute_affected_pop(
-        self, country: str, forecast_dataset: AdminDataSet
-    ) -> AdminDataSet:
+    def __compute_affected_pop(self):
         """Compute affected population given a flood extent"""
 
         # calculate affected population raster
-        self.__compute_affected_pop_raster(country=country)
+        self.__compute_affected_pop_raster()
 
         if os.path.exists(self.aff_pop_raster):
             # calculate affected population per admin division
-            for adm_lvl in forecast_dataset.adm_levels:
+            for adm_lvl in self.data.forecast_admin.adm_levels:
 
                 # get adm boundaries
-                gdf_adm = self.load.get_adm_boundaries(country, adm_lvl)
-                gdf_adm = gdf_adm.to_crs("EPSG:4326")
+                gdf_adm = self.load.get_adm_boundaries(
+                    self.data.forecast_admin.country, adm_lvl
+                )
 
                 # perform zonal statistics on affected population raster
                 with rasterio.open(self.aff_pop_raster) as src:
@@ -415,9 +414,9 @@ class Forecast:
                 gdf_pop.index = gdf_pop[f"adm{adm_lvl}_pcode"]
 
                 # add affected population to forecast data units
-                for forecast_data_unit in forecast_dataset.get_data_units_admin_level(
-                    adm_lvl
-                ):
+                for (
+                    forecast_data_unit
+                ) in self.data.forecast_admin.get_data_units_admin_level(adm_lvl):
                     if forecast_data_unit.triggered:
                         try:
                             pop_affected = int(
@@ -434,40 +433,27 @@ class Forecast:
                             * 100.0
                         )
 
-        return forecast_dataset
-
-    def forecast_station(
-        self, discharge_dataset: StationDataSet, threshold_dataset: StationDataSet
-    ) -> StationDataSet:
+    def compute_forecast_station(self):
         """
         Forecast floods per GloFAS station based on river discharge data
         1. determine if trigger level is reached, with which probability, and alert class
         """
-        os.makedirs(self.input_data_path, exist_ok=True)
-        os.makedirs(self.output_data_path, exist_ok=True)
+        self.__compute_triggers_station()
 
-        forecast_dataset = self.__compute_triggers_station(
-            discharge_dataset, threshold_dataset
-        )
-        return forecast_dataset
-
-    def __compute_triggers_station(
-        self, discharge_dataset: StationDataSet, threshold_dataset: StationDataSet
-    ) -> StationDataSet:
+    def __compute_triggers_station(self):
         """Determine if trigger level is reached, its probability, and the alert class"""
 
         os.makedirs(self.input_data_path, exist_ok=True)
         os.makedirs(self.output_data_path, exist_ok=True)
-        country = discharge_dataset.country
-        forecast_dataset = StationDataSet(country=country, timestamp=datetime.today())
+        country = self.data.forecast_station.country
 
         trigger_on_lead_time = self.settings.get_country_setting(
             country, "trigger-on-lead-time"
         )
-        for discharge_station in discharge_dataset.data_units:
+        for discharge_station in self.data.discharge_station.data_units:
             station_code = discharge_station.station_code
             lead_time = discharge_station.lead_time
-            threshold_station = threshold_dataset.get_data_unit(station_code)
+            threshold_station = self.data.threshold_station.get_data_unit(station_code)
 
             likelihood_per_return_period, forecasts = {}, []
             for threshold in threshold_station.thresholds:
@@ -543,5 +529,4 @@ class Forecast:
                 return_period=return_period,
                 alert_class=alert_class,
             )
-            forecast_dataset.upsert_data_unit(forecast_data_unit)
-        return forecast_dataset
+            self.data.forecast_station.upsert_data_unit(forecast_data_unit)
