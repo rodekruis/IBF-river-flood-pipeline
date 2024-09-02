@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os.path
 import copy
 from floodpipeline.secrets import Secrets
@@ -13,6 +15,7 @@ from floodpipeline.data import (
     ThresholdStationDataUnit,
     ForecastStationDataUnit,
     DischargeStationDataUnit,
+    PipelineDataSets,
 )
 from urllib.error import HTTPError
 import urllib.request, json
@@ -23,9 +26,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import requests
 import geopandas as gpd
-from shapely import Point
 from typing import List
-from shapely.geometry import shape
 from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import ResourceNotFoundError
 
@@ -259,8 +260,8 @@ class Load:
 
     def get_stations(
         self, country: str, pcodes_from: str = "threshold-station"
-    ) -> StationDataSet:
-        """Get GloFAS stations from IBF API"""
+    ) -> list[str]:
+        """Get GloFAS stations from IBF app"""
         stations = self.ibf_api_get_request(
             f"glofas-stations/{country}",
         )

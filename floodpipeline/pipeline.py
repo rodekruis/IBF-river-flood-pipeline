@@ -1,8 +1,10 @@
+from floodpipeline.data import AdminDataSet, StationDataSet
 from floodpipeline.extract import Extract
 from floodpipeline.forecast import Forecast
 from floodpipeline.load import Load
 from floodpipeline.secrets import Secrets
 from floodpipeline.settings import Settings
+from floodpipeline.data import PipelineDataSets
 from datetime import datetime, date, timedelta
 import logging
 
@@ -17,105 +19,103 @@ logging.getLogger("requests_oauthlib").setLevel(logging.WARNING)
 class Pipeline:
     """Base class for flood data pipeline"""
 
-    def __init__(self, settings: Settings, secrets: Secrets):
+    def __init__(self, settings: Settings, secrets: Secrets, country: str):
         self.settings = settings
-        self.extract = Extract(settings=settings, secrets=secrets)
-        self.forecast = Forecast(settings=settings, secrets=secrets)
+        if country not in [c["name"] for c in self.settings.get_setting("countries")]:
+            raise ValueError(f"No config found for country {country}")
+        self.country = country
         self.load = Load(settings=settings, secrets=secrets)
+        self.data = PipelineDataSets(country=country, settings=settings)
+        self.data.threshold_admin = self.load.get_pipeline_data(
+            data_type="threshold", country=self.country
+        )
+        self.data.threshold_station = self.load.get_pipeline_data(
+            data_type="threshold-station", country=self.country
+        )
+        self.extract = Extract(
+            settings=settings,
+            secrets=secrets,
+            data=self.data,
+        )
+        self.forecast = Forecast(
+            settings=settings,
+            secrets=secrets,
+            data=self.data,
+        )
 
     def run_pipeline(
         self,
-        country: str,
         prepare: bool = True,
         extract: bool = True,
         forecast: bool = True,
         send: bool = True,
         save: bool = False,
+        debug: bool = False,  # fast extraction on yesterday's data
     ):
         """Run the flood data pipeline"""
 
-        countries = [c["name"] for c in self.settings.get_setting("countries")]
-        if country not in countries:
-            raise ValueError(f"No config found for country {country}")
-
         if prepare:
             logging.info("prepare discharge data")
-            self.extract.prepare_glofas_data(country=country)
+            self.extract.prepare_glofas_data(country=self.country, debug=debug)
 
         if extract:
             logging.info(f"extract discharge data")
-            discharge_dataset, discharge_station_dataset = (
-                self.extract.extract_glofas_data(country=country)
-            )
+            self.extract.extract_glofas_data(country=self.country, debug=debug)
             if save:
                 logging.info("save discharge data to storage")
                 self.load.save_pipeline_data(
-                    data_type="discharge", dataset=discharge_dataset
+                    data_type="discharge", dataset=self.data.discharge_admin
                 )
                 self.load.save_pipeline_data(
-                    data_type="discharge-station", dataset=discharge_station_dataset
+                    data_type="discharge-station", dataset=self.data.discharge_station
                 )
         else:
             logging.info(f"get discharge data from storage")
-            discharge_dataset = self.load.get_pipeline_data(
+            self.data.discharge_admin = self.load.get_pipeline_data(
                 data_type="discharge",
-                country=country,
+                country=self.country,
                 start_date=date.today(),
                 end_date=date.today() + timedelta(days=1),
             )
-            discharge_station_dataset = self.load.get_pipeline_data(
+            self.data.discharge_station = self.load.get_pipeline_data(
                 data_type="discharge-station",
-                country=country,
+                country=self.country,
                 start_date=date.today(),
                 end_date=date.today() + timedelta(days=1),
             )
 
         if forecast:
-            logging.info("get thresholds from storage")
-            thresholds_dataset = self.load.get_pipeline_data(
-                data_type="threshold", country=country
-            )
-            thresholds_station_dataset = self.load.get_pipeline_data(
-                data_type="threshold-station", country=country
-            )
             logging.info("forecast floods")
-            forecast_dataset = self.forecast.forecast(
-                discharge_dataset=discharge_dataset,
-                threshold_dataset=thresholds_dataset,
-            )
-            forecast_station_dataset = self.forecast.forecast_station(
-                discharge_dataset=discharge_station_dataset,
-                threshold_dataset=thresholds_station_dataset,
-            )
+            self.forecast.compute_forecast()
             if save:
                 logging.info("save flood forecasts to storage")
                 self.load.save_pipeline_data(
-                    data_type="forecast", dataset=forecast_dataset
+                    data_type="forecast", dataset=self.data.forecast_admin
                 )
                 self.load.save_pipeline_data(
-                    data_type="forecast-station", dataset=forecast_station_dataset
+                    data_type="forecast-station", dataset=self.data.forecast_station
                 )
 
         if send:
             if not forecast:
                 logging.info("get flood forecasts from storage")
-                forecast_dataset = self.load.get_pipeline_data(
+                self.data.forecast_admin = self.load.get_pipeline_data(
                     data_type="forecast",
-                    country=country,
+                    country=self.country,
                     start_date=date.today(),
                     end_date=date.today() + timedelta(days=1),
                 )
-                forecast_station_dataset = self.load.get_pipeline_data(
-                    data_type="forecast",
-                    country=country,
+                self.data.forecast_station = self.load.get_pipeline_data(
+                    data_type="forecast-station",
+                    country=self.country,
                     start_date=date.today(),
                     end_date=date.today() + timedelta(days=1),
                 )
             logging.info("send data to IBF API")
             self.load.send_to_ibf_api(
-                forecast_data=forecast_dataset,
-                discharge_data=discharge_dataset,
-                forecast_station_data=forecast_station_dataset,
-                discharge_station_data=discharge_station_dataset,
+                forecast_data=self.data.forecast_admin,
+                discharge_data=self.data.discharge_admin,
+                forecast_station_data=self.data.forecast_station,
+                discharge_station_data=self.data.discharge_station,
                 flood_extent=self.forecast.flood_extent_raster,
             )

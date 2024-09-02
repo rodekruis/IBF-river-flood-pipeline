@@ -2,10 +2,6 @@
 
 Forecast river or fluvial flooding. Part of [IBF-system](https://github.com/rodekruis/IBF-system).
 
-## TO-DO
-
-* put datasets together in pipeline base class
-
 ## Description
 
 The pipeline roughly consists of three steps:
