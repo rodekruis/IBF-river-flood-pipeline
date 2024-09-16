@@ -56,6 +56,15 @@ def add_flood_maps(country):
     ]:
         raise ValueError(f"No config found for country {country}")
 
+    print("loading permanent water bodies")
+    lake_filepath = "data/updates/HydroLAKES_polys_v10.gdb"
+    if not os.path.exists(lake_filepath):
+        load.get_from_blob(
+            lake_filepath,
+            f"{settings.get_setting('blob_storage_path')}/lakes/HydroLAKES_polys_v10.gdb",
+        )
+    lake_gdf = gpd.read_file(lake_filepath)
+
     for country_settings in settings.get_setting("countries"):
 
         if country != "all" and country != country_settings["name"]:
@@ -68,6 +77,10 @@ def add_flood_maps(country):
             gdf_flood_map = get_global_flood_maps(rp=int(rp))
             country_gdf = load.get_adm_boundaries(country=country_name, adm_level=1)
             country_gdf = country_gdf.to_crs("EPSG:4326")
+
+            lake_country_gdf = gpd.clip(
+                lake_gdf, country_gdf.total_bounds, keep_geom_type=True
+            )
 
             # filter global flood maps based on country boundary
             gdf_flood_map = gpd.clip(
@@ -84,12 +97,20 @@ def add_flood_maps(country):
                 r = requests.get(url)
                 with open(flood_map_filepath, "wb") as file:
                     file.write(r.content)
-                # clip
+                # clip around country boundary
                 flood_map_clipped_filepath = f"data/updates/{flood_map_file}".replace(
                     ".tif", "_clipped.tif"
                 )
                 clip, out_meta = clip_raster(
                     flood_map_filepath, [box(*country_gdf.total_bounds)]
+                )
+                with rasterio.open(flood_map_clipped_filepath, "w", **out_meta) as dest:
+                    dest.write(clip)
+                # mask permanent water bodies
+                clip, out_meta = clip_raster(
+                    flood_map_clipped_filepath,
+                    lake_country_gdf["geometry"].tolist(),
+                    invert=True,
                 )
                 with rasterio.open(flood_map_clipped_filepath, "w", **out_meta) as dest:
                     dest.write(clip)

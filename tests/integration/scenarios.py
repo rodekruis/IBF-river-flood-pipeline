@@ -1,14 +1,10 @@
 from floodpipeline.pipeline import Pipeline
-from floodpipeline.secrets import Secrets
-from floodpipeline.settings import Settings
 from floodpipeline.data import (
     AdminDataSet,
     DischargeDataUnit,
     DischargeStationDataUnit,
     StationDataSet,
 )
-from datetime import datetime
-import copy
 import random
 
 SCENARIOS = [
@@ -37,33 +33,23 @@ def get_ensemble_likelihood(ensemble, threshold):
 class Scenario:
     """Extract river discharge data from external sources"""
 
-    def __init__(
-        self,
-        scenario: str,
-        country: str,
-        settings: Settings = None,
-        secrets: Secrets = None,
-    ):
+    def __init__(self, scenario: str, country: str, pipeline: Pipeline):
         self.scenario = scenario
         self.country = country
-        self.pipe = Pipeline(settings=settings, secrets=secrets)
-        self.thresholds_dataset = AdminDataSet()
-        self.discharge_dataset = AdminDataSet()
-        self.thresholds_station_dataset = StationDataSet()
-        self.discharge_station_dataset = StationDataSet()
+        self.pipe = pipeline
         self.noEns = self.pipe.settings.get_setting("no_ensemble_members")
 
     def get_discharge_per_return_period(self, return_period, pcode=None, station=None):
         """Get river discharge corresponding to given return period"""
         if pcode is not None:
-            trigger_threshold_data_unit = self.thresholds_dataset.get_data_unit(pcode)
+            threshold_data_unit = self.pipe.data.threshold_admin.get_data_unit(pcode)
         elif station is not None:
-            trigger_threshold_data_unit = self.thresholds_station_dataset.get_data_unit(
+            threshold_data_unit = self.pipe.data.threshold_station.get_data_unit(
                 station
             )
         else:
             raise ValueError("Either pcode or station must be provided")
-        trigger_threshold = trigger_threshold_data_unit.get_threshold(return_period)
+        trigger_threshold = threshold_data_unit.get_threshold(return_period)
         return trigger_threshold * 1.01
 
     def set_discharge(
@@ -77,7 +63,7 @@ class Scenario:
         value = self.get_discharge_per_return_period(
             station=station, return_period=return_period
         )
-        discharge_station = self.discharge_station_dataset.get_data_unit(
+        discharge_station = self.pipe.data.discharge_station.get_data_unit(
             station, lead_time
         )
         ensemble_values = [random.gauss(value, value * 0.1) for _ in range(self.noEns)]
@@ -85,14 +71,16 @@ class Scenario:
             ensemble_values = [e * 1.01 for e in ensemble_values]
         discharge_station.discharge_ensemble = ensemble_values
         discharge_station.discharge_mean = sum(ensemble_values) / len(ensemble_values)
-        self.discharge_station_dataset.upsert_data_unit(discharge_station)
+        self.pipe.data.discharge_station.upsert_data_unit(discharge_station)
 
         for adm_level in discharge_station.pcodes.keys():
             for pcode in discharge_station.pcodes[adm_level]:
                 value = self.get_discharge_per_return_period(
                     pcode=pcode, return_period=return_period
                 )
-                discharge_admin = self.discharge_dataset.get_data_unit(pcode, lead_time)
+                discharge_admin = self.pipe.data.discharge_admin.get_data_unit(
+                    pcode, lead_time
+                )
                 ensemble_values = [
                     random.gauss(value, value * 0.1) for _ in range(self.noEns)
                 ]
@@ -102,14 +90,11 @@ class Scenario:
                 discharge_admin.discharge_mean = sum(ensemble_values) / len(
                     ensemble_values
                 )
-                self.discharge_dataset.upsert_data_unit(discharge_admin)
+                self.pipe.data.discharge_admin.upsert_data_unit(discharge_admin)
 
     def get_random_stations(self, n):
         """Get random station codes"""
-        stations = self.pipe.load.get_pipeline_data(
-            data_type="threshold-station", country=self.country
-        )
-        station_codes = stations.get_station_codes()
+        station_codes = self.pipe.data.threshold_station.get_station_codes()
         random_station_codes = []
         for i in range(n):
             random_station_code = random.choice(station_codes)
@@ -152,13 +137,6 @@ class Scenario:
         )
         alert_classes = ["min", "med", "min", "med"]
 
-        self.thresholds_dataset = self.pipe.load.get_pipeline_data(
-            data_type="threshold", country=self.country
-        )
-        self.thresholds_station_dataset = self.pipe.load.get_pipeline_data(
-            data_type="threshold-station", country=self.country
-        )
-
         if not random_stations:
             if not stations:
                 raise ValueError("stations must be provided if random_pcodes is False")
@@ -166,18 +144,13 @@ class Scenario:
             stations = self.get_random_stations(n=4)
 
         # prepare river discharge data
-        self.discharge_dataset = AdminDataSet(
-            country=self.country,
-            timestamp=datetime.today(),
-            adm_levels=adm_levels,
-        )
         for adm_level in adm_levels:
             country_gdf = self.pipe.load.get_adm_boundaries(
                 country=self.country, adm_level=adm_level
             )
             for lead_time in range(1, 8):
                 for ix, row in country_gdf.iterrows():
-                    self.discharge_dataset.upsert_data_unit(
+                    self.pipe.data.discharge_admin.upsert_data_unit(
                         DischargeDataUnit(
                             adm_level=adm_level,
                             lead_time=lead_time,
@@ -185,19 +158,19 @@ class Scenario:
                             discharge_ensemble=[0.01] * self.noEns,
                         )
                     )
-        self.discharge_station_dataset = self.pipe.load.get_stations(self.country)
-        for station in self.discharge_station_dataset.data_units:
-            self.discharge_station_dataset.upsert_data_unit(
-                DischargeStationDataUnit(
-                    station_code=station.station_code,
-                    station_name=station.station_name,
-                    lat=station.lat,
-                    lon=station.lon,
-                    pcodes=station.pcodes,
-                    lead_time=station.lead_time,
-                    discharge_ensemble=[0.01] * self.noEns,
+        for station in self.pipe.data.threshold_station.data_units:
+            for lead_time in range(1, 8):
+                self.pipe.data.discharge_station.upsert_data_unit(
+                    DischargeStationDataUnit(
+                        station_code=station.station_code,
+                        station_name=station.station_name,
+                        lat=station.lat,
+                        lon=station.lon,
+                        pcodes=station.pcodes,
+                        lead_time=lead_time,
+                        discharge_ensemble=[0.01] * self.noEns,
+                    )
                 )
-            )
 
         # apply scenario
         if self.scenario == "nothing":
@@ -297,6 +270,3 @@ class Scenario:
                     return_period=alert_on_return_period[alert_classes[ix]],
                     probability=alert_on_probability,
                 )
-        return copy.deepcopy(self.discharge_dataset), copy.deepcopy(
-            self.discharge_station_dataset
-        )
