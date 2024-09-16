@@ -38,10 +38,13 @@ def merge_rasters(raster_filepaths: list) -> tuple:
     return mosaic, out_meta
 
 
-def clip_raster(raster_filepath: str, shapes: List[Polygon]) -> tuple:
+def clip_raster(
+    raster_filepath: str, shapes: List[Polygon], invert: bool = False
+) -> tuple:
     """Clip raster with a list of polygons, return the clipped raster and its metadata"""
+    crop = True if not invert else False
     with rasterio.open(raster_filepath) as src:
-        outImage, out_transform = mask(src, shapes, crop=True)
+        outImage, out_transform = mask(src, shapes, crop=crop, invert=invert)
         outMeta = src.meta.copy()
     outMeta.update(
         {
@@ -261,7 +264,6 @@ class Forecast:
         country = self.data.forecast_admin.country
         if os.path.exists(self.flood_extent_raster):
             os.remove(self.flood_extent_raster)
-
         flood_rasters = {}
         for rp in [10, 20, 50, 75, 100, 200, 500]:
             flood_raster_filepath = (
@@ -343,6 +345,8 @@ class Forecast:
     def __compute_affected_pop_raster(self):
         """Compute affected population raster given a flood extent"""
         country = self.data.forecast_admin.country
+        if os.path.exists(self.aff_pop_raster):
+            os.remove(self.aff_pop_raster)
         # get population density raster
         self.load.get_population_density(country, self.pop_raster)
         # convert flood extent raster to vector (list of shapes)
@@ -360,8 +364,6 @@ class Forecast:
         affected_pop_raster, affected_pop_meta = clip_raster(
             self.pop_raster, flood_shapes
         )
-        if os.path.exists(self.aff_pop_raster):
-            os.remove(self.aff_pop_raster)
         with rasterio.open(self.aff_pop_raster, "w", **affected_pop_meta) as dest:
             dest.write(affected_pop_raster)
 

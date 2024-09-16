@@ -1,6 +1,6 @@
 # IBF-river-flood-pipeline
 
-Forecast river or fluvial flooding. Part of [IBF-system](https://github.com/rodekruis/IBF-system).
+Forecast riverine flooding. Part of [IBF-system](https://github.com/rodekruis/IBF-system).
 
 ## Description
 
@@ -15,7 +15,7 @@ The pipeline stores data in:
 
 The pipeline depends on the following services:
 * [GloFAS](https://global-flood.emergency.copernicus.eu/): provides river discharge forecasts
-* [Glofas data pipeline](https://adf.azure.com/en/authoring/pipeline/GloFAS%20data%20pipeline?factory=%2Fsubscriptions%2F57b0d17a-5429-4dbb-8366-35c928e3ed94%2FresourceGroups%2FIBF-system%2Fproviders%2FMicrosoft.DataFactory%2Ffactories%2FIBF-data-factory) in IBF-data-factory (Azure Data Factory): extracts GloFAS data and stores it in `510ibfsystem`
+* [Glofas data pipeline in IBF-data-factory](https://adf.azure.com/en/authoring/pipeline/GloFAS%20data%20pipeline?factory=%2Fsubscriptions%2F57b0d17a-5429-4dbb-8366-35c928e3ed94%2FresourceGroups%2FIBF-system%2Fproviders%2FMicrosoft.DataFactory%2Ffactories%2FIBF-data-factory) (Azure Data Factory): extracts GloFAS data and stores it in `510ibfsystem`
 * IBF-app 
 
 For more information, see the [functional architecture diagram](https://miro.com/app/board/uXjVK7Valso=/?moveToWidget=3458764592859255828&cot=14).
@@ -23,7 +23,7 @@ For more information, see the [functional architecture diagram](https://miro.com
 ## Basic Usage
 
 To run the pipeline locally
-1. fill in the secrets in `example.env` and rename the file to `.env`; in this way, they will be loaded as environment variables
+1. fill in the secrets in `.env.example` and rename the file to `.env`; in this way, they will be loaded as environment variables
 2. install requirements
 ```
 pip install poetry
@@ -47,7 +47,7 @@ Options:
 
 ### How do I set up the pipeline for a new country?
 
-1. Check that the administrative boundaries are in the IBF system; if not, ask developers to add them
+1. Check that the administrative boundaries are in the IBF system; if not, ask IBF developers to add them
 2. Add country-specific configuration in `config/config.yaml`
 3. Create historical flood extent maps
 ```
