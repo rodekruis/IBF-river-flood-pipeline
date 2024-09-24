@@ -66,3 +66,10 @@ If you need to change the pipeline's behavior for a specific country, please dis
 
 ### There is a new version of GloFAS, how do I update the pipeline?
 
+GloFAS should take care to update the river discharge data in a backward-compatible way. If that is not the case, you need 
+to have a look at `floodpipeline/extract.py` and change what's needed.
+
+What will probably change with the new GloFAS version are the trigger/alert thresholds. To update them you need to
+1. Change the 
+
+

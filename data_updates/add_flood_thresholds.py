@@ -49,12 +49,14 @@ def add_flood_thresholds(country):
 
     # Download flood thresholds
     html_page = BeautifulSoup(
-        requests.get("https://confluence.ecmwf.int/display/CEMS/Auxiliary+Data").text,
+        requests.get(settings.get_setting("glofas_threshold_url")).text,
         features="lxml",
     )
     flood_thresholds_files = {}
     for rp in RETURN_PERIODS:
-        filename = f"flood_threshold_glofas_v4_rl_{'{:.1f}'.format(rp)}.nc"
+        filename = (
+            f"{settings.get_setting('glofas_threshold_files')}_{'{:.1f}'.format(rp)}.nc"
+        )
         filepath = os.path.join("data", "updates", filename)
         if not os.path.exists(filepath):
             print(f"Downloading {filename}")
@@ -105,6 +107,7 @@ def add_flood_thresholds(country):
                     ],
                 )
                 ttdus.append(ttdu)
+
         # save admin division thresholds to cosmos
         threshold_data = AdminDataSet(
             country=country_name,

@@ -10,6 +10,7 @@ from floodpipeline.load import Load
 from datetime import datetime
 from typing import List
 from shapely import Polygon
+from shapely.geometry import shape
 import pandas as pd
 from rasterstats import zonal_stats
 import os
@@ -18,7 +19,7 @@ import rasterio
 from rasterio.merge import merge
 from rasterio.mask import mask
 from rasterio.features import shapes
-import itertools
+import shutil
 
 
 def merge_rasters(raster_filepaths: list) -> tuple:
@@ -65,7 +66,7 @@ def classify_alert(
     alert_on_minimum_probability,
 ) -> str:
     """
-    Classify alert based on flood forecast return period specified in settings.py
+    Classify alert based as specified in config file
     """
     alert_class = "no"
     if classify_alert_on == "return-period":
@@ -276,9 +277,22 @@ class Forecast:
                     f"/flood-maps/{country.upper()}/flood_map_{country.upper()}_RP{rp}.tif",
                 )
             flood_rasters[rp] = flood_raster_filepath
-        flood_rasters_admin_div = []
-        for adm_lvl in self.data.forecast_admin.adm_levels:
 
+        # create empty raster
+        empty_raster = self.flood_extent_raster.replace(".tif", "_empty.tif")
+        with rasterio.open(list(flood_rasters.values())[0]) as src:
+            flood_raster_data = src.read()
+            flood_raster_data = np.empty(flood_raster_data.shape)
+            flood_raster_meta = src.meta.copy()
+            with rasterio.open(empty_raster, "w", **flood_raster_meta) as dest:
+                dest.write(flood_raster_data)
+
+        adm_lvl = self.data.forecast_admin.adm_levels[0]
+        for lead_time in self.data.forecast_admin.get_lead_times():
+
+            raster_lead_time = self.flood_extent_raster.replace(
+                ".tif", f"_{lead_time}.tif"
+            )
             # get adm boundaries
             gdf_adm = self.load.get_adm_boundaries(
                 self.data.forecast_admin.country, adm_lvl
@@ -286,9 +300,10 @@ class Forecast:
             gdf_adm.index = gdf_adm[f"adm{adm_lvl}_pcode"]
 
             # calculate flood extent for each triggered admin division
-            for (
-                forecast_data_unit
-            ) in self.data.forecast_admin.get_data_units_admin_level(adm_lvl):
+            flood_rasters_admin_div = []
+            for forecast_data_unit in self.data.forecast_admin.get_data_units(
+                lead_time=lead_time, adm_level=adm_lvl
+            ):
                 if forecast_data_unit.triggered:
                     adm_bounds = gdf_adm.loc[forecast_data_unit.pcode, "geometry"]
                     rp = forecast_data_unit.return_period
@@ -311,61 +326,59 @@ class Forecast:
                         dest.write(flood_raster_data)
                     flood_rasters_admin_div.append(flood_raster_admin_div)
 
-        # merge flood extents of each triggered admin division
-        if len(flood_rasters_admin_div) > 0:
-            flood_raster_data, flood_raster_meta = merge_rasters(
-                flood_rasters_admin_div
-            )
-            # flood_raster_data = np.where(
-            #     flood_raster_data > 0., 1., 0.
-            # )
-            with rasterio.open(
-                self.flood_extent_raster, "w", **flood_raster_meta
-            ) as dest:
-                dest.write(flood_raster_data)
-            # delete intermediate files
-            for file in flood_rasters_admin_div:
-                try:
-                    os.remove(file)
-                except FileNotFoundError:
-                    pass
-        else:
-            # create empty raster
-            with rasterio.open(list(flood_rasters.values())[0]) as src:
-                flood_raster_data = src.read()
-                flood_raster_data = np.where(
-                    flood_raster_data > -9999999999999999.0, 0.0, 0.0
+            # merge flood extents of each triggered admin division
+            if len(flood_rasters_admin_div) > 0:
+                flood_rasters_admin_div.append(empty_raster)
+                flood_raster_data, flood_raster_meta = merge_rasters(
+                    flood_rasters_admin_div
                 )
-                flood_raster_meta = src.meta.copy()
-            with rasterio.open(
-                self.flood_extent_raster, "w", **flood_raster_meta
-            ) as dest:
-                dest.write(flood_raster_data)
+                with rasterio.open(raster_lead_time, "w", **flood_raster_meta) as dest:
+                    dest.write(flood_raster_data)
+                # delete intermediate files
+                for file in flood_rasters_admin_div:
+                    if file != empty_raster:
+                        try:
+                            os.remove(file)
+                        except FileNotFoundError:
+                            pass
+            else:
+                shutil.copy(empty_raster, raster_lead_time)
 
     def __compute_affected_pop_raster(self):
         """Compute affected population raster given a flood extent"""
         country = self.data.forecast_admin.country
-        if os.path.exists(self.aff_pop_raster):
-            os.remove(self.aff_pop_raster)
         # get population density raster
         self.load.get_population_density(country, self.pop_raster)
-        # convert flood extent raster to vector (list of shapes)
+
         flood_shapes = []
-        with rasterio.open(self.flood_extent_raster) as dataset:
-            # Read the dataset's valid data mask as a ndarray.
-            image = dataset.read(1).astype(np.float32)
-            image[image >= 0] = 1
-            mask = dataset.dataset_mask()
-            rasterio_shapes = shapes(image, mask=mask, transform=dataset.transform)
-            for geom, val in rasterio_shapes:
-                if val >= self.settings.get_setting("minimum_flood_depth"):
-                    flood_shapes.append(geom)
-        # clip population density raster with flood shapes and save the result
-        affected_pop_raster, affected_pop_meta = clip_raster(
-            self.pop_raster, flood_shapes
-        )
-        with rasterio.open(self.aff_pop_raster, "w", **affected_pop_meta) as dest:
-            dest.write(affected_pop_raster)
+        for lead_time in self.data.forecast_admin.get_lead_times():
+            flood_raster_lead_time = self.flood_extent_raster.replace(
+                ".tif", f"_{lead_time}.tif"
+            )
+            aff_pop_raster_lead_time = self.aff_pop_raster.replace(
+                ".tif", f"_{lead_time}.tif"
+            )
+            if os.path.exists(aff_pop_raster_lead_time):
+                os.remove(aff_pop_raster_lead_time)
+            with rasterio.open(flood_raster_lead_time) as dataset:
+                # Read the dataset's valid data mask as a ndarray.
+                image = dataset.read(1).astype(np.float32)
+                image[image >= self.settings.get_setting("minimum_flood_depth")] = 1
+                rasterio_shapes = shapes(
+                    image, transform=dataset.transform
+                )  # convert flood extent raster to vector (list of shapes)
+                for geom, val in rasterio_shapes:
+                    if val >= self.settings.get_setting("minimum_flood_depth"):
+                        flood_shapes.append(shape(geom))
+            # clip population density raster with flood shapes and save the result
+            if len(flood_shapes) > 0:
+                affected_pop_raster, affected_pop_meta = clip_raster(
+                    self.pop_raster, flood_shapes
+                )
+                with rasterio.open(
+                    aff_pop_raster_lead_time, "w", **affected_pop_meta
+                ) as dest:
+                    dest.write(affected_pop_raster)
 
     def __compute_affected_pop(self):
         """Compute affected population given a flood extent"""
@@ -373,52 +386,56 @@ class Forecast:
         # calculate affected population raster
         self.__compute_affected_pop_raster()
 
-        if os.path.exists(self.aff_pop_raster):
-            # calculate affected population per admin division
-            for adm_lvl in self.data.forecast_admin.adm_levels:
+        # calculate affected population per admin division
+        for adm_lvl in self.data.forecast_admin.adm_levels:
+            # get adm boundaries
+            gdf_adm = self.load.get_adm_boundaries(
+                self.data.forecast_admin.country, adm_lvl
+            )
+            gdf_aff_pop, gdf_pop = pd.DataFrame(), pd.DataFrame()
 
-                # get adm boundaries
-                gdf_adm = self.load.get_adm_boundaries(
-                    self.data.forecast_admin.country, adm_lvl
+            for lead_time in self.data.forecast_admin.get_lead_times():
+                aff_pop_raster_lead_time = self.aff_pop_raster.replace(
+                    ".tif", f"_{lead_time}.tif"
                 )
+                if os.path.exists(aff_pop_raster_lead_time):
+                    # perform zonal statistics on affected population raster
+                    with rasterio.open(aff_pop_raster_lead_time) as src:
+                        raster_array = src.read(1)
+                        raster_array[raster_array < 0.0] = 0.0
+                        transform = src.transform
 
-                # perform zonal statistics on affected population raster
-                with rasterio.open(self.aff_pop_raster) as src:
-                    raster_array = src.read(1)
-                    raster_array[raster_array < 0.0] = 0.0
-                    transform = src.transform
+                    stats = zonal_stats(
+                        gdf_adm,
+                        raster_array,
+                        affine=transform,
+                        stats=["sum"],
+                        all_touched=True,
+                        nodata=0.0,
+                    )
+                    gdf_aff_pop = pd.concat([gdf_adm, pd.DataFrame(stats)], axis=1)
+                    gdf_aff_pop.index = gdf_aff_pop[f"adm{adm_lvl}_pcode"]
 
-                stats = zonal_stats(
-                    gdf_adm,
-                    raster_array,
-                    affine=transform,
-                    stats=["sum"],
-                    all_touched=True,
-                    nodata=0.0,
-                )
-                gdf_aff_pop = pd.concat([gdf_adm, pd.DataFrame(stats)], axis=1)
-                gdf_aff_pop.index = gdf_aff_pop[f"adm{adm_lvl}_pcode"]
-
-                # perform zonal statistics on population density raster (to compute % aff pop)
-                with rasterio.open(self.pop_raster) as src:
-                    raster_array = src.read(1)
-                    raster_array[raster_array < 0.0] = 0.0
-                    transform = src.transform
-                stats = zonal_stats(
-                    gdf_adm,
-                    raster_array,
-                    affine=transform,
-                    stats=["sum"],
-                    all_touched=True,
-                    nodata=0.0,
-                )
-                gdf_pop = pd.concat([gdf_adm, pd.DataFrame(stats)], axis=1)
-                gdf_pop.index = gdf_pop[f"adm{adm_lvl}_pcode"]
+                    # perform zonal statistics on population density raster (to compute % aff pop)
+                    with rasterio.open(self.pop_raster) as src:
+                        raster_array = src.read(1)
+                        raster_array[raster_array < 0.0] = 0.0
+                        transform = src.transform
+                    stats = zonal_stats(
+                        gdf_adm,
+                        raster_array,
+                        affine=transform,
+                        stats=["sum"],
+                        all_touched=True,
+                        nodata=0.0,
+                    )
+                    gdf_pop = pd.concat([gdf_adm, pd.DataFrame(stats)], axis=1)
+                    gdf_pop.index = gdf_pop[f"adm{adm_lvl}_pcode"]
 
                 # add affected population to forecast data units
-                for (
-                    forecast_data_unit
-                ) in self.data.forecast_admin.get_data_units_admin_level(adm_lvl):
+                for forecast_data_unit in self.data.forecast_admin.get_data_units(
+                    adm_level=adm_lvl, lead_time=lead_time
+                ):
                     if forecast_data_unit.triggered:
                         try:
                             pop_affected = int(
@@ -427,13 +444,16 @@ class Forecast:
                         except (ValueError, TypeError):
                             pop_affected = 0
                         forecast_data_unit.pop_affected = pop_affected
-                        forecast_data_unit.pop_affected_perc = (
-                            float(
-                                pop_affected
-                                / gdf_pop.loc[forecast_data_unit.pcode, "sum"]
+                        try:
+                            forecast_data_unit.pop_affected_perc = (
+                                float(
+                                    pop_affected
+                                    / gdf_pop.loc[forecast_data_unit.pcode, "sum"]
+                                )
+                                * 100.0
                             )
-                            * 100.0
-                        )
+                        except (ValueError, TypeError):
+                            forecast_data_unit.pop_affected_perc = 0.0
 
     def compute_forecast_station(self):
         """

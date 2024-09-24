@@ -27,6 +27,7 @@ from urllib3.util.retry import Retry
 import requests
 import geopandas as gpd
 from typing import List
+import shutil
 from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import ResourceNotFoundError
 
@@ -314,20 +315,20 @@ class Load:
             data_type="threshold-station", country=country
         )
 
-        processed_stations, processed_pcodes = [], []
+        processed_stations, processed_pcodes, triggered_lead_times = [], [], []
 
         # START EVENT LOOP
         for station_code in forecast_station_data.get_station_codes():
 
             # determine event lead time
-            lead_time_event = None
-            event_type = "none"
+            event_type, lead_time_event = "none", None
             for lead_time in range(1, 8):
                 if forecast_station_data.get_data_unit(
                     station_code, lead_time
                 ).triggered:
                     lead_time_event = lead_time
                     event_type = "trigger"
+                    triggered_lead_times.append(lead_time)
                     break
             if lead_time_event is None:
                 for lead_time in range(1, 8):
@@ -387,7 +388,7 @@ class Load:
                         exposure_pcodes.append({"placeCode": pcode, "amount": amount})
                         processed_pcodes.append(pcode)
                     body = {
-                        "countryCodeISO3": forecast_data.country,
+                        "countryCodeISO3": country,
                         "leadTime": f"{lead_time_event}-day",
                         "dynamicIndicator": indicator,
                         "adminLevel": int(adm_level),
@@ -419,7 +420,7 @@ class Load:
                     }
                 )
             body = {
-                "countryCodeISO3": forecast_data.country,
+                "countryCodeISO3": country,
                 "triggersPerLeadTime": triggers_per_lead_time,
                 "disasterType": "floods",
                 "eventName": event_name,
@@ -464,16 +465,23 @@ class Load:
                         "date": upload_time,
                     }
                     self.ibf_api_post_request("point-data/dynamic", body=body)
-                    processed_stations.append(station_code)
+                processed_stations.append(station_code)
 
         # END OF EVENT LOOP
         ###############################################################################################################
 
         # flood extent raster: admin-area-dynamic-data/raster/floods
-        if flood_extent is not None:
-            if not os.path.exists(flood_extent):
-                raise FileNotFoundError(f"Flood extent raster {flood_extent} not found")
-            files = {"file": open(flood_extent, "rb")}
+        for lead_time in triggered_lead_times:
+            flood_extent_old = flood_extent.replace(".tif", f"_{lead_time}.tif")
+            if not os.path.exists(flood_extent_old):
+                raise FileNotFoundError(
+                    f"Flood extent raster for lead time {lead_time} not found"
+                )
+            flood_extent_new = flood_extent.replace(
+                ".tif", f"_{lead_time}-day_{country}.tif"
+            )
+            shutil.copy(flood_extent_old, flood_extent_new)
+            files = {"file": open(flood_extent_new, "rb")}
             self.ibf_api_post_request(
                 "admin-area-dynamic-data/raster/floods", files=files
             )
@@ -501,7 +509,7 @@ class Load:
                                 {"placeCode": pcode, "amount": amount}
                             )
                     body = {
-                        "countryCodeISO3": forecast_data.country,
+                        "countryCodeISO3": country,
                         "leadTime": "1-day",  # this is a specific check IBF uses to establish no-trigger
                         "dynamicIndicator": indicator,
                         "adminLevel": adm_level,

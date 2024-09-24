@@ -173,17 +173,23 @@ class AdminDataSet:
             set([x.lead_time for x in self.data_units if hasattr(x, "lead_time")])
         )
 
-    def get_data_units_lead_time(self, lead_time: int = None):
-        """Return list of data units filtered by lead time"""
+    def get_data_units(self, lead_time: int = None, adm_level: int = None):
+        """Return list of data units filtered by lead time and/or admin level"""
         if not self.data_units:
             raise ValueError("Data units not found")
-        return list(filter(lambda x: x.lead_time == lead_time, self.data_units))
-
-    def get_data_units_admin_level(self, adm_level: int = None):
-        """Return list of data units filtered by admin leve"""
-        if not self.data_units:
-            raise ValueError("Data units not found")
-        return list(filter(lambda x: x.adm_level == adm_level, self.data_units))
+        if lead_time and adm_level:
+            return list(
+                filter(
+                    lambda x: x.lead_time == lead_time and x.adm_level == adm_level,
+                    self.data_units,
+                )
+            )
+        elif lead_time:
+            return list(filter(lambda x: x.lead_time == lead_time, self.data_units))
+        elif adm_level:
+            return list(filter(lambda x: x.adm_level == adm_level, self.data_units))
+        else:
+            return self.data_units
 
     def get_data_unit(self, pcode: str, lead_time: int = None) -> AdminDataUnit:
         """Get data unit by pcode and optionally by lead time"""
