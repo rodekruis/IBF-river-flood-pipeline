@@ -129,12 +129,23 @@ class Scenario:
             self.country, "trigger-on-minimum-probability"
         )
 
-        alert_on_return_period = self.pipe.settings.get_country_setting(
-            self.country, "alert-on-return-period"
+        classify_alert_on = self.pipe.settings.get_country_setting(
+            self.country, "classify-alert-on"
         )
-        alert_on_probability = self.pipe.settings.get_country_setting(
-            self.country, "alert-on-minimum-probability"
-        )
+        if classify_alert_on == "return-period":
+            alert_on_return_period = self.pipe.settings.get_country_setting(
+                self.country, "alert-on-return-period"
+            )["med"]
+            alert_on_probability = self.pipe.settings.get_country_setting(
+                self.country, "alert-on-minimum-probability"
+            )
+        elif classify_alert_on == "probability":
+            alert_on_return_period = self.pipe.settings.get_country_setting(
+                self.country, "alert-on-return-period"
+            )
+            alert_on_probability = self.pipe.settings.get_country_setting(
+                self.country, "alert-on-minimum-probability"
+            )["med"]
         alert_classes = ["min", "med", "min", "med"]
 
         if not random_stations:
@@ -212,8 +223,8 @@ class Scenario:
         elif self.scenario == "alert":
             self.set_discharge(
                 station=stations[0],
-                lead_time=random.randint(1, 6),
-                return_period=alert_on_return_period[alert_classes[1]],
+                lead_time=2,
+                return_period=alert_on_return_period,
                 probability=alert_on_probability,
             )
 
@@ -221,37 +232,37 @@ class Scenario:
             for ix, station in enumerate(stations):
                 self.set_discharge(
                     station=station,
-                    lead_time=random.randint(1, 6),
-                    return_period=alert_on_return_period[alert_classes[ix]],
+                    lead_time=2,
+                    return_period=alert_on_return_period,
                     probability=alert_on_probability,
                 )
 
         elif self.scenario == "trigger-and-alert":
             self.set_discharge(
                 station=stations[0],
-                lead_time=trigger_on_lead_time - 1,
+                lead_time=trigger_on_lead_time,
                 return_period=trigger_on_return_period,
                 probability=trigger_on_probability,
             )
             self.set_discharge(
                 station=stations[1],
-                lead_time=random.randint(1, 6),
-                return_period=alert_on_return_period[alert_classes[1]],
+                lead_time=2,
+                return_period=alert_on_return_period,
                 probability=alert_on_probability,
             )
 
         elif self.scenario == "trigger-and-alert-multiple":
             self.set_discharge(
                 station=stations[0],
-                lead_time=trigger_on_lead_time - 1,
+                lead_time=trigger_on_lead_time,
                 return_period=trigger_on_return_period,
                 probability=trigger_on_probability,
             )
             for ix, station in enumerate(stations[1:]):
                 self.set_discharge(
                     station=station,
-                    lead_time=random.randint(1, 6),
-                    return_period=alert_on_return_period[alert_classes[ix]],
+                    lead_time=2,
+                    return_period=alert_on_return_period,
                     probability=alert_on_probability,
                 )
 
@@ -266,7 +277,7 @@ class Scenario:
             for ix, station in enumerate(stations[2:]):
                 self.set_discharge(
                     station=station,
-                    lead_time=random.randint(1, 6),
-                    return_period=alert_on_return_period[alert_classes[ix]],
+                    lead_time=2,
+                    return_period=alert_on_return_period,
                     probability=alert_on_probability,
                 )

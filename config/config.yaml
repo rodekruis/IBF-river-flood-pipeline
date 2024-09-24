@@ -3,7 +3,9 @@
 floods:
   global_flood_maps_url: https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/CEMS-GLOFAS/flood_hazard
   no_ensemble_members: 51  # number of ensemble members to consider
-  minimum_flood_depth: 0.5  # minimum flood depth considered when calculating affected population
+  minimum_flood_depth: 0.1  # minimum flood depth in meters, to calculate affected population
+  glofas_threshold_url: https://confluence.ecmwf.int/display/CEMS/Auxiliary+Data
+  glofas_threshold_files: flood_threshold_glofas_v4_rl
 
 auxiliary:
   worldpop_url: https://data.worldpop.org/GIS/Population/Global_2021_2022_1km_UNadj/constrained/2022
@@ -59,59 +61,59 @@ countries:
       med: 0.7
       max: 0.8
 
-#  - name: ZMB
-#    admin-levels:
-#      - 2
-#      - 3
-#    trigger-on-lead-time: 7
-#    trigger-on-return-period: 5
-#    trigger-on-minimum-probability: 0.8
-#    classify-alert-on: probability
-#    alert-on-return-period: 5
-#    alert-on-minimum-probability:
-#      min: 0.6
-#      med: 0.7
-#      max: 0.8
-#
-#  - name: SSD
-#    admin-levels:
-#      - 2
-#      - 3
-#    trigger-on-lead-time: 7
-#    trigger-on-return-period: 2
-#    trigger-on-minimum-probability: 0.8
-#    classify-alert-on: probability
-#    alert-on-return-period: 2
-#    alert-on-minimum-probability:
-#      min: 0.6
-#      med: 0.7
-#      max: 0.8
-#
-#  - name: MWI
-#    admin-levels:
-#      - 2
-#      - 3
-#    trigger-on-lead-time: 6
-#    trigger-on-return-period: 5
-#    trigger-on-minimum-probability: 0.8
-#    classify-alert-on: probability
-#    alert-on-return-period: 5
-#    alert-on-minimum-probability:
-#      min: 0.6
-#      med: 0.7
-#      max: 0.8
-#
-#  - name: PHL
-#    admin-levels:
-#      - 2
-#      - 3
-#    trigger-on-lead-time: 3
-#    trigger-on-return-period: 5
-#    trigger-on-minimum-probability: 0.8
-#    classify-alert-on: probability
-#    alert-on-return-period: 5
-#    alert-on-minimum-probability:
-#      min: 0.6
-#      med: 0.7
-#      max: 0.8
+  - name: ZMB
+    admin-levels:
+      - 2
+      - 3
+    trigger-on-lead-time: 7
+    trigger-on-return-period: 5
+    trigger-on-minimum-probability: 0.8
+    classify-alert-on: probability
+    alert-on-return-period: 5
+    alert-on-minimum-probability:
+      min: 0.6
+      med: 0.7
+      max: 0.8
+
+  - name: SSD
+    admin-levels:
+      - 2
+      - 3
+    trigger-on-lead-time: 7
+    trigger-on-return-period: 2
+    trigger-on-minimum-probability: 0.8
+    classify-alert-on: probability
+    alert-on-return-period: 2
+    alert-on-minimum-probability:
+      min: 0.6
+      med: 0.7
+      max: 0.8
+
+  - name: MWI
+    admin-levels:
+      - 2
+      - 3
+    trigger-on-lead-time: 6
+    trigger-on-return-period: 5
+    trigger-on-minimum-probability: 0.8
+    classify-alert-on: probability
+    alert-on-return-period: 5
+    alert-on-minimum-probability:
+      min: 0.6
+      med: 0.7
+      max: 0.8
+
+  - name: PHL
+    admin-levels:
+      - 2
+      - 3
+    trigger-on-lead-time: 3
+    trigger-on-return-period: 5
+    trigger-on-minimum-probability: 0.8
+    classify-alert-on: probability
+    alert-on-return-period: 5
+    alert-on-minimum-probability:
+      min: 0.6
+      med: 0.7
+      max: 0.8
 

@@ -42,16 +42,16 @@ def upload_scenario(scenario, country):
         return
 
     print(f"get mock data for scenario: {scenario.scenario}")
-    scenario.get_discharge_scenario(random_stations=False, stations=["G5075", "G5220"])
-    # for du in discharge_dataset.data_units:
-    #     if du.discharge_mean > 100.0:
-    #         print(vars(du))
+    if country == "UGA":
+        stations = ["G5075", "G5189", "G5196", "G5317"]
+    elif country == "KEN":
+        stations = ["G5142", "G5305"]
+    else:
+        raise ValueError(f"country {country} not supported")
+    scenario.get_discharge_scenario(random_stations=False, stations=stations)
 
     print(f"forecast floods")
     pipe.forecast.compute_forecast()
-
-    # flood_raster = "data/output/empty_old.tif"
-    # flood_raster = "data/output/flood_old.tif"
 
     print(f"send to IBF API")
     pipe.load.send_to_ibf_api(
