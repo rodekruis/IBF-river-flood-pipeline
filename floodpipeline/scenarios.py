@@ -124,7 +124,7 @@ class Scenario:
             country_gdf = self.pipe.load.get_adm_boundaries(
                 country=self.country, adm_level=adm_level
             )
-            for lead_time in range(1, 8):
+            for lead_time in range(0, 8):
                 for ix, row in country_gdf.iterrows():
                     self.pipe.data.discharge_admin.upsert_data_unit(
                         DischargeDataUnit(
@@ -135,7 +135,7 @@ class Scenario:
                         )
                     )
         for station in self.pipe.data.threshold_station.data_units:
-            for lead_time in range(1, 8):
+            for lead_time in range(0, 8):
                 self.pipe.data.discharge_station.upsert_data_unit(
                     DischargeStationDataUnit(
                         station_code=station.station_code,

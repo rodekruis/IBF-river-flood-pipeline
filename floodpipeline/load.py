@@ -322,7 +322,7 @@ class Load:
 
             # determine event lead time
             event_type, lead_time_event = "none", None
-            for lead_time in range(1, 8):
+            for lead_time in range(0, 8):
                 if forecast_station_data.get_data_unit(
                     station_code, lead_time
                 ).triggered:
@@ -331,7 +331,7 @@ class Load:
                     triggered_lead_times.append(lead_time)
                     break
             if lead_time_event is None:
-                for lead_time in range(1, 8):
+                for lead_time in range(0, 8):
                     if (
                         forecast_station_data.get_data_unit(
                             station_code, lead_time
@@ -404,7 +404,7 @@ class Load:
 
             # send trigger per lead time: event/triggers-per-leadtime
             triggers_per_lead_time = []
-            for lead_time in range(1, 8):
+            for lead_time in range(0, 8):
                 is_trigger, is_trigger_or_alert = False, False
                 if event_type == "trigger" and lead_time >= lead_time_event:
                     is_trigger = True

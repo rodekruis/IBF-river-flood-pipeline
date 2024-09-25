@@ -13,12 +13,17 @@ default_events = [
     {
         "station-code": "G5075",
         "type": "trigger",
-        "lead-time": 5,
+        "lead-time": 0,
     },
     {
         "station-code": "G5189",
-        "type": "medium-alert",
-        "lead-time": 3,
+        "type": "trigger",
+        "lead-time": 5,
+    },
+    {
+        "station-code": "G5317",
+        "type": "trigger",
+        "lead-time": 7,
     },
 ]
 
