@@ -25,5 +25,6 @@ COPY data_updates /data_updates
 COPY tests /tests
 COPY config /config
 COPY "flood_pipeline.py" .
+COPY "run_scenario.py" .
 
 # ENTRYPOINT ["poetry", "run", "python", "-m", "flood_pipeline"]
