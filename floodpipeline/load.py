@@ -112,6 +112,7 @@ class Load:
             self.set_settings(settings)
         if secrets is not None:
             self.set_secrets(secrets)
+        self.rasters_sent = []
 
     def set_settings(self, settings):
         """Set settings"""
@@ -224,20 +225,22 @@ class Load:
             raise ValueError(
                 f"Error in IBF API POST request: {r.status_code}, {r.text}"
             )
-        if os.path.exists("logs"):
-            if body:
-                filename = body["date"] + ".json"
-                filename = "".join(x for x in filename if x.isalnum())
-                filename = os.path.join("logs", filename)
-                logs = {"endpoint": path, "payload": body}
-                with open(filename, "a") as file:
-                    file.write(str(logs) + "\n")
-            elif files:
-                filename = datetime.today().strftime("%Y%m%d") + ".json"
-                filename = os.path.join("logs", filename)
-                logs = {"endpoint": path, "payload": files}
-                with open(filename, "a") as file:
-                    file.write(str(logs) + "\n")
+        if not os.path.exists("logs"):
+            os.makedirs("logs")
+        if body:
+            filename = body["date"]
+            filename = "".join(x for x in filename if x.isalnum())
+            filename = filename + ".json"
+            filename = os.path.join("logs", filename)
+            logs = {"endpoint": path, "payload": body}
+            with open(filename, "a") as file:
+                file.write(str(logs) + "\n")
+        elif files:
+            filename = datetime.today().strftime("%Y%m%d") + ".json"
+            filename = os.path.join("logs", filename)
+            logs = {"endpoint": path, "payload": files}
+            with open(filename, "a") as file:
+                file.write(str(logs) + "\n")
 
     def ibf_api_get_request(self, path, parameters=None):
         token = self.__ibf_api_authenticate()
@@ -471,6 +474,7 @@ class Load:
         ###############################################################################################################
 
         # flood extent raster: admin-area-dynamic-data/raster/floods
+        self.rasters_sent = []
         for lead_time in triggered_lead_times:
             flood_extent_old = flood_extent.replace(".tif", f"_{lead_time}.tif")
             if not os.path.exists(flood_extent_old):
@@ -481,6 +485,7 @@ class Load:
                 ".tif", f"_{lead_time}-day_{country}.tif"
             )
             shutil.copy(flood_extent_old, flood_extent_new)
+            self.rasters_sent.append(flood_extent_new)
             files = {"file": open(flood_extent_new, "rb")}
             self.ibf_api_post_request(
                 "admin-area-dynamic-data/raster/floods", files=files

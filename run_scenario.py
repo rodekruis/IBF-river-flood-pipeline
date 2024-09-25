@@ -4,10 +4,7 @@ from floodpipeline.pipeline import Pipeline
 from floodpipeline.secrets import Secrets
 from floodpipeline.settings import Settings
 from floodpipeline.scenarios import Scenario
-
-if not os.path.exists(".env"):
-    print("credentials not found, run this test from root directory")
-
+import datetime
 
 default_events = [
     {
@@ -53,6 +50,22 @@ def run_scenario(events, country):
         discharge_station_data=pipe.data.discharge_station,
         flood_extent=pipe.forecast.flood_extent_raster,
     )
+
+    print(f"save the logs to storage")
+    run_directory = (
+        datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat()
+    )
+    blob_directory = pipe.settings.get_setting("blob_storage_path")
+    for file in os.listdir("logs"):
+        pipe.load.save_to_blob(
+            local_path=f"logs/{file}",
+            file_dir_blob=f"{blob_directory}/dev-logs/{run_directory}/logs.json",
+        )
+    for raster in pipe.load.rasters_sent:
+        pipe.load.save_to_blob(
+            local_path=raster,
+            file_dir_blob=f"{blob_directory}/dev-logs/{run_directory}/{os.path.basename(raster)}",
+        )
 
 
 if __name__ == "__main__":
