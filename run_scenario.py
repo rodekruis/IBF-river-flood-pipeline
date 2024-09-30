@@ -58,6 +58,7 @@ def run_scenario(
         forecast_station_data=pipe.data.forecast_station,
         discharge_station_data=pipe.data.discharge_station,
         flood_extent=pipe.forecast.flood_extent_raster,
+        upload_time=upload_time,
     )
 
     print(f"save the logs to storage")
