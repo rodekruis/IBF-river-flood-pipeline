@@ -34,10 +34,7 @@ default_events = [
     help="datetime",
     default=datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
 )
-def run_scenario(
-    events,
-    country,
-):
+def run_scenario(events, country, datetime):
 
     pipe = Pipeline(
         country=country,
@@ -58,7 +55,7 @@ def run_scenario(
         forecast_station_data=pipe.data.forecast_station,
         discharge_station_data=pipe.data.discharge_station,
         flood_extent=pipe.forecast.flood_extent_raster,
-        upload_time=upload_time,
+        upload_time=datetime,
     )
 
     print(f"save the logs to storage")
