@@ -186,7 +186,7 @@ class Extract:
                 for station_code in self.data.threshold_station.get_station_codes():
                     station = self.data.threshold_station.get_data_unit(
                         station_code=station_code
-                    )  # get station information from pre-loaded thresholds
+                    )  # get station information from preloaded thresholds
                     for lead_time in range(1, 8):
                         # Extract data for stations
                         discharges = []

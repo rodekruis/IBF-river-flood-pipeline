@@ -158,7 +158,7 @@ class Scenario:
                     probability=trigger_on_probability,
                 )
             elif event["type"] == "medium-alert" or event["type"] == "low-alert":
-                level = "med" if event["type"] == "medium-alert" else "low"
+                level = "med" if event["type"] == "medium-alert" else "min"
                 if classify_alert_on == "return-period":
                     self.set_discharge(
                         station=event["station-code"],
