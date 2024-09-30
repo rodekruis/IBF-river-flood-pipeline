@@ -7,34 +7,22 @@ from floodpipeline.scenarios import Scenario
 import datetime
 
 default_events = [
-    {
-        "station-code": "G6111",
-        "type": "trigger",
-        "lead-time": 5,
-    },
-    {
-        "station-code": "G5142",
-        "type": "low-alert",
-        "lead-time": 5,
-    },
-    {
-        "station-code": "G5195",
-        "type": "medium-alert",
-        "lead-time": 7,
-    },
+    {"station-code": "G5075", "type": "trigger", "lead-time": 0},
+    {"station-code": "G5189", "type": "trigger", "lead-time": 5},
+    {"station-code": "G5317", "type": "trigger", "lead-time": 7},
 ]
 
 
 @click.command()
 @click.option("--events", "-s", help="events", default=default_events)
-@click.option("--country", "-c", help="country", default="KEN")
+@click.option("--country", "-c", help="country", default="UGA")
 @click.option(
-    "--datetime",
+    "--upload_time",
     "-d",
     help="datetime",
     default=datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
 )
-def run_scenario(events, country, datetime):
+def run_scenario(events, country, upload_time):
 
     pipe = Pipeline(
         country=country,
