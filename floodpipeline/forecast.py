@@ -442,7 +442,7 @@ class Forecast:
                             pop_affected = int(
                                 gdf_aff_pop.loc[forecast_data_unit.pcode, "sum"]
                             )
-                        except (ValueError, TypeError):
+                        except (ValueError, TypeError, KeyError):
                             pop_affected = 0
                         forecast_data_unit.pop_affected = pop_affected
                         try:
@@ -453,7 +453,7 @@ class Forecast:
                                 )
                                 * 100.0
                             )
-                        except (ValueError, TypeError):
+                        except (ValueError, TypeError, KeyError):
                             forecast_data_unit.pop_affected_perc = 0.0
 
     def compute_forecast_station(self):

@@ -8,17 +8,17 @@ import datetime
 
 default_events = [
     {
-        "station-code": "G5075",
+        "station-code": "G6111",
         "type": "trigger",
-        "lead-time": 0,
+        "lead-time": 5,
     },
     {
-        "station-code": "G5189",
+        "station-code": "G5142",
         "type": "low-alert",
         "lead-time": 5,
     },
     {
-        "station-code": "G5317",
+        "station-code": "G5195",
         "type": "medium-alert",
         "lead-time": 7,
     },
@@ -27,8 +27,17 @@ default_events = [
 
 @click.command()
 @click.option("--events", "-s", help="events", default=default_events)
-@click.option("--country", "-c", help="country", default="UGA")
-def run_scenario(events, country):
+@click.option("--country", "-c", help="country", default="KEN")
+@click.option(
+    "--datetime",
+    "-d",
+    help="datetime",
+    default=datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
+)
+def run_scenario(
+    events,
+    country,
+):
 
     pipe = Pipeline(
         country=country,
