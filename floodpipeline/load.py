@@ -303,7 +303,7 @@ class Load:
         forecast_station_data: StationDataSet,
         discharge_station_data: StationDataSet,
         flood_extent: str = None,
-        upload_time: str = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        upload_time: str = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
     ):
         """Send flood forecast data to IBF API"""
 
