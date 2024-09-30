@@ -284,6 +284,7 @@ class Forecast:
             flood_raster_data = src.read()
             flood_raster_data = np.empty(flood_raster_data.shape)
             flood_raster_meta = src.meta.copy()
+            flood_raster_meta["compress"] = "lzw"
             with rasterio.open(empty_raster, "w", **flood_raster_meta) as dest:
                 dest.write(flood_raster_data)
 
@@ -332,9 +333,9 @@ class Forecast:
                 flood_raster_data, flood_raster_meta = merge_rasters(
                     flood_rasters_admin_div
                 )
+                flood_raster_meta["compress"] = "lzw"
                 with rasterio.open(raster_lead_time, "w", **flood_raster_meta) as dest:
                     dest.write(flood_raster_data)
-                # delete intermediate files
                 for file in flood_rasters_admin_div:
                     if file != empty_raster:
                         try:

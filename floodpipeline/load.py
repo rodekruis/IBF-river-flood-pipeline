@@ -268,7 +268,9 @@ class Load:
         """Get GloFAS stations from IBF app"""
         stations = self.ibf_api_get_request(
             f"glofas-stations/{country}",
+            # f"point-data/{country}",
         )
+        # print(stations)
         # get pcodes
         if pcodes_from == "threshold-station":
             station_data = self.get_pipeline_data(
@@ -475,21 +477,28 @@ class Load:
 
         # flood extent raster: admin-area-dynamic-data/raster/floods
         self.rasters_sent = []
-        for lead_time in triggered_lead_times:
-            flood_extent_old = flood_extent.replace(".tif", f"_{lead_time}.tif")
-            if not os.path.exists(flood_extent_old):
-                raise FileNotFoundError(
-                    f"Flood extent raster for lead time {lead_time} not found"
+        for lead_time in range(0, 8):
+            if lead_time in triggered_lead_times:
+                flood_extent_old = flood_extent.replace(".tif", f"_{lead_time}.tif")
+                if not os.path.exists(flood_extent_old):
+                    raise FileNotFoundError(
+                        f"Flood extent raster for lead time {lead_time} not found"
+                    )
+                flood_extent_new = flood_extent.replace(
+                    ".tif", f"_{lead_time}-day_{country}.tif"
                 )
-            flood_extent_new = flood_extent.replace(
-                ".tif", f"_{lead_time}-day_{country}.tif"
-            )
-            shutil.copy(flood_extent_old, flood_extent_new)
-            self.rasters_sent.append(flood_extent_new)
-            files = {"file": open(flood_extent_new, "rb")}
-            self.ibf_api_post_request(
-                "admin-area-dynamic-data/raster/floods", files=files
-            )
+                shutil.copy(flood_extent_old, flood_extent_new)
+                self.rasters_sent.append(flood_extent_new)
+                files = {"file": open(flood_extent_new, "rb")}
+                self.ibf_api_post_request(
+                    "admin-area-dynamic-data/raster/floods", files=files
+                )
+            else:
+                flood_extent_empty = flood_extent.replace(".tif", f"_empty.tif")
+                files = {"file": open(flood_extent_empty, "rb")}
+                self.ibf_api_post_request(
+                    "admin-area-dynamic-data/raster/floods", files=files
+                )
 
         # send empty exposure data
         if len(processed_pcodes) == 0:
@@ -577,6 +586,10 @@ class Load:
             "date": upload_time,
         }
         self.ibf_api_post_request("event/close-events", body=body)
+
+        # send notification
+        body = {"countryCodeISO3": country, "disasterType": "floods"}
+        self.ibf_api_post_request("notification/send", body=body)
 
     def save_pipeline_data(
         self, data_type: str, dataset: AdminDataSet, replace_country: bool = False
