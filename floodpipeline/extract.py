@@ -9,6 +9,7 @@ from floodpipeline.load import Load
 import os
 from datetime import datetime, timedelta
 import time
+import geopandas as gpd
 import pandas as pd
 import xarray as xr
 from rasterstats import zonal_stats
@@ -122,6 +123,20 @@ class Extract:
         if debug:
             no_ens = 1
             date = (datetime.today() - timedelta(days=1)).strftime("%Y%m%d")
+
+        # # Download permanent water bodies and crop around country
+        # country_gdf = self.load.get_adm_boundaries(country=country, adm_level=1)
+        # country_gdf = country_gdf.to_crs("EPSG:4326")
+        # lake_filepath = "data/updates/HydroLAKES_polys_v10.gdb"
+        # if not os.path.exists(lake_filepath):
+        #     self.load.get_from_blob(
+        #         lake_filepath,
+        #         f"{self.settings.get_setting('blob_storage_path')}/lakes/HydroLAKES_polys_v10.gdb",
+        #     )
+        # lake_gdf = gpd.read_file(lake_filepath)
+        # lake_country_gdf = gpd.clip(
+        #         lake_gdf, country_gdf.total_bounds, keep_geom_type=True
+        #     )
 
         # Extract data from NetCDF files
         logging.info("Extract admin-level river discharge from GloFAS data")

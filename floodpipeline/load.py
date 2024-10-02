@@ -262,39 +262,27 @@ class Load:
             raise ValueError(f"Error in IBF API GET request: {r.status_code}, {r.text}")
         return r.json()
 
-    def get_stations(
-        self, country: str, pcodes_from: str = "threshold-station"
-    ) -> list[str]:
+    def get_stations(self, country: str) -> list[dict]:
         """Get GloFAS stations from IBF app"""
         stations = self.ibf_api_get_request(
-            f"glofas-stations/{country}",
+            f"point-data/glofas_stations/{country}", parameters={
+                    "disasterType": "flood",
+                    "pointDataCategory": "glofas_stations",
+                    "countryCodeISO3": country
+                }
         )
-        # get pcodes
-        if pcodes_from == "threshold-station":
-            station_data = self.get_pipeline_data(
-                data_type="threshold-station", country=country
-            )
-        else:
-            raise ValueError(f"Invalid pcodes_from {pcodes_from}")
-
-        station_dataset = StationDataSet(
-            country=country,
-            timestamp=datetime.today(),
-        )
-        for station in stations:
-            pcodes = station_data.get_data_unit(station["stationCode"]).pcodes
-            for lead_time in range(1, 8):
-                station_dataset.upsert_data_unit(
-                    DischargeStationDataUnit(
-                        station_code=station["stationCode"],
-                        station_name=station["stationName"],
-                        lat=station["lat"],
-                        lon=station["lon"],
-                        pcodes=pcodes,
-                        lead_time=lead_time,
-                    )
-                )
-        return station_dataset
+        gdf_stations = gpd.GeoDataFrame.from_features(stations["features"])
+        stations = []
+        for ix, row in gdf_stations.iterrows():
+            station = {
+                'stationCode': row['stationCode'],
+                'stationName': row['stationName'],
+                'lat': row['geometry'].y,
+                'lon': row['geometry'].x
+            }
+            stations.append(station)
+        
+        return stations
 
     def send_to_ibf_api(
         self,

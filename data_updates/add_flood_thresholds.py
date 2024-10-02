@@ -119,9 +119,7 @@ def add_flood_thresholds(country):
 
         print(f"Calculating station thresholds for {country_name}")
         # extract thresholds for GloFAS stations based on their coordinates
-        stations = load.ibf_api_get_request(
-            f"glofas-stations/{country_name}",
-        )
+        stations = load.get_stations(country=country_name)
         threshold_stations = {}
         for rp, filename in flood_thresholds_files.items():
             with rasterio.open(filename) as src:
@@ -172,7 +170,6 @@ def add_flood_thresholds(country):
                         print(adm_gdf[f"adm{adm_level+1}_pcode"].unique())
                         raise ValueError(f"pcodes in district_mapping.csv do not correspond to those in IBF app for adm_level {adm_level}")
                     pcodes_stations[station_code][adm_level] = pcodes
-            print(pcodes_stations)
         # otherwise, calculate based on river maps
         else:
             river_filepath = f"data/updates/rivers.gpkg"
