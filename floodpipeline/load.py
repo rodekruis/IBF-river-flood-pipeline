@@ -323,98 +323,138 @@ class Load:
         # START EVENT LOOP
         for station_code in forecast_station_data.get_station_codes():
 
-            # determine event lead time
-            event_type, lead_time_event = "none", None
+            # determine events
+            events = {}
+            for lead_time in range(0, 8):
+                if (
+                    forecast_station_data.get_data_unit(
+                        station_code, lead_time
+                    ).alert_class
+                    != "no"
+                ):
+                    lead_time_event = lead_time
+                    events[lead_time] = "alert"
             for lead_time in range(0, 8):
                 if forecast_station_data.get_data_unit(
                     station_code, lead_time
                 ).triggered:
                     lead_time_event = lead_time
-                    event_type = "trigger"
+                    events[lead_time] = "trigger"
                     triggered_lead_times.append(lead_time)
-                    break
-            if lead_time_event is None:
-                for lead_time in range(0, 8):
-                    if (
-                        forecast_station_data.get_data_unit(
-                            station_code, lead_time
-                        ).alert_class
-                        != "no"
-                    ):
-                        lead_time_event = lead_time
-                        event_type = "alert"
-                        break
-            if lead_time_event is None:
+            if not events:
                 continue
+            events = dict(sorted(events.items()))
 
-            # set as alert if lead time is greater than trigger_on_lead_time
-            if lead_time_event > trigger_on_lead_time and event_type == "trigger":
-                event_type = "alert"
-            station_name = forecast_station_data.get_data_unit(
-                station_code, trigger_on_lead_time
-            ).station_name
-            event_name = str(station_name) if station_name else str(station_code)
-            if event_name == "":
-                event_name = str(station_code)
+            for lead_time_event, event_type in events.items():
 
-            logging.info(
-                f"event {event_name}, type '{event_type}', lead time {lead_time_event}"
-            )
-            forecast_station = forecast_station_data.get_data_unit(
-                station_code, lead_time_event
-            )
-            threshold_station = threshold_station_data.get_data_unit(station_code)
+                # set as alert if lead time is greater than trigger_on_lead_time
+                if lead_time_event > trigger_on_lead_time and event_type == "trigger":
+                    event_type = "alert"
+                station_name = forecast_station_data.get_data_unit(
+                    station_code, trigger_on_lead_time
+                ).station_name
+                event_name = str(station_name) if station_name else str(station_code)
+                if event_name == "":
+                    event_name = str(station_code)
 
-            # send exposure data: admin-area-dynamic-data/exposure
-            indicators = [
-                "population_affected",
-                "population_affected_percentage",
-                "alert_threshold",
-            ]
-            for indicator in indicators:
-                for adm_level in forecast_station.pcodes.keys():
-                    exposure_pcodes = []
-                    for pcode in forecast_station.pcodes[adm_level]:
-                        forecast_admin = forecast_data.get_data_unit(
-                            pcode, lead_time_event
-                        )
-                        amount = None
-                        if indicator == "population_affected":
-                            amount = forecast_admin.pop_affected
-                        elif indicator == "population_affected_percentage":
-                            amount = forecast_admin.pop_affected_perc
-                        elif indicator == "alert_threshold":
-                            amount = alert_class_to_threshold(
-                                alert_class=forecast_admin.alert_class,
-                                triggered=True if event_type == "trigger" else False,
+                logging.info(
+                    f"event {event_name}, type '{event_type}', lead time {lead_time_event}"
+                )
+                forecast_station = forecast_station_data.get_data_unit(
+                    station_code, lead_time_event
+                )
+                threshold_station = threshold_station_data.get_data_unit(station_code)
+
+                # send exposure data: admin-area-dynamic-data/exposure
+                indicators = [
+                    "population_affected",
+                    "population_affected_percentage",
+                    "alert_threshold",
+                ]
+                for indicator in indicators:
+                    for adm_level in forecast_station.pcodes.keys():
+                        exposure_pcodes = []
+                        for pcode in forecast_station.pcodes[adm_level]:
+                            forecast_admin = forecast_data.get_data_unit(
+                                pcode, lead_time_event
                             )
-                        exposure_pcodes.append({"placeCode": pcode, "amount": amount})
-                        processed_pcodes.append(pcode)
-                    body = {
-                        "countryCodeISO3": country,
-                        "leadTime": f"{lead_time_event}-day",
-                        "dynamicIndicator": indicator,
-                        "adminLevel": int(adm_level),
-                        "exposurePlaceCodes": exposure_pcodes,
-                        "disasterType": "floods",
-                        "eventName": event_name,
-                        "date": upload_time,
+                            amount = None
+                            if indicator == "population_affected":
+                                amount = forecast_admin.pop_affected
+                            elif indicator == "population_affected_percentage":
+                                amount = forecast_admin.pop_affected_perc
+                            elif indicator == "alert_threshold":
+                                amount = alert_class_to_threshold(
+                                    alert_class=forecast_admin.alert_class,
+                                    triggered=True if event_type == "trigger" else False,
+                                )
+                            exposure_pcodes.append({"placeCode": pcode, "amount": amount})
+                            processed_pcodes.append(pcode)
+                        body = {
+                            "countryCodeISO3": country,
+                            "leadTime": f"{lead_time_event}-day",
+                            "dynamicIndicator": indicator,
+                            "adminLevel": int(adm_level),
+                            "exposurePlaceCodes": exposure_pcodes,
+                            "disasterType": "floods",
+                            "eventName": event_name,
+                            "date": upload_time,
+                        }
+                        self.ibf_api_post_request(
+                            "admin-area-dynamic-data/exposure", body=body
+                        )
+                processed_pcodes = list(set(processed_pcodes))
+
+                # GloFAS station data: point-data/dynamic
+                # 1 call per alert/triggered station, and 1 overall (to same endpoint) for all other stations
+                if event_type != "none":
+                    station_forecasts = {
+                        "forecastLevel": [],
+                        "eapAlertClass": [],
+                        "forecastReturnPeriod": [],
+                        "triggerLevel": [],
                     }
-                    self.ibf_api_post_request(
-                        "admin-area-dynamic-data/exposure", body=body
+                    discharge_station = discharge_station_data.get_data_unit(
+                        station_code, lead_time_event
                     )
-            processed_pcodes = list(set(processed_pcodes))
+                    for indicator in station_forecasts.keys():
+                        value = None
+                        if indicator == "forecastLevel":
+                            value = int(discharge_station.discharge_mean or 0)
+                        elif indicator == "eapAlertClass":
+                            value = forecast_station.alert_class
+                            if event_type == "alert" and value == "max":
+                                value = "med"
+                        elif indicator == "forecastReturnPeriod":
+                            value = forecast_station.return_period
+                        elif indicator == "triggerLevel":
+                            value = int(
+                                threshold_station.get_threshold(trigger_on_return_period)
+                            )
+                        station_data = {"fid": station_code, "value": value}
+                        station_forecasts[indicator].append(station_data)
+                        body = {
+                            "leadTime": f"{lead_time_event}-day",
+                            "key": indicator,
+                            "dynamicPointData": station_forecasts[indicator],
+                            "pointDataCategory": "glofas_stations",
+                            "disasterType": "floods",
+                            "date": upload_time,
+                        }
+                        self.ibf_api_post_request("point-data/dynamic", body=body)
+                    processed_stations.append(station_code)
 
             # send trigger per lead time: event/triggers-per-leadtime
             triggers_per_lead_time = []
             for lead_time in range(0, 8):
                 is_trigger, is_trigger_or_alert = False, False
-                if event_type == "trigger" and lead_time >= lead_time_event:
-                    is_trigger = True
-                if (
-                    event_type == "trigger" or event_type == "alert"
-                ) and lead_time >= lead_time_event:
-                    is_trigger_or_alert = True
+                for lead_time_event, event_type in events.items():
+                    if event_type == "trigger" and lead_time >= lead_time_event:
+                        is_trigger = True
+                    if (
+                        event_type == "trigger" or event_type == "alert"
+                    ) and lead_time >= lead_time_event:
+                        is_trigger_or_alert = True
                 triggers_per_lead_time.append(
                     {
                         "leadTime": f"{lead_time}-day",
@@ -430,45 +470,6 @@ class Load:
                 "date": upload_time,
             }
             self.ibf_api_post_request("event/triggers-per-leadtime", body=body)
-
-            # GloFAS station data: point-data/dynamic
-            # 1 call per alert/triggered station, and 1 overall (to same endpoint) for all other stations
-            if event_type != "none":
-                station_forecasts = {
-                    "forecastLevel": [],
-                    "eapAlertClass": [],
-                    "forecastReturnPeriod": [],
-                    "triggerLevel": [],
-                }
-                discharge_station = discharge_station_data.get_data_unit(
-                    station_code, lead_time_event
-                )
-                for indicator in station_forecasts.keys():
-                    value = None
-                    if indicator == "forecastLevel":
-                        value = int(discharge_station.discharge_mean or 0)
-                    elif indicator == "eapAlertClass":
-                        value = forecast_station.alert_class
-                        if event_type == "alert" and value == "max":
-                            value = "med"
-                    elif indicator == "forecastReturnPeriod":
-                        value = forecast_station.return_period
-                    elif indicator == "triggerLevel":
-                        value = int(
-                            threshold_station.get_threshold(trigger_on_return_period)
-                        )
-                    station_data = {"fid": station_code, "value": value}
-                    station_forecasts[indicator].append(station_data)
-                    body = {
-                        "leadTime": f"{lead_time_event}-day",
-                        "key": indicator,
-                        "dynamicPointData": station_forecasts[indicator],
-                        "pointDataCategory": "glofas_stations",
-                        "disasterType": "floods",
-                        "date": upload_time,
-                    }
-                    self.ibf_api_post_request("point-data/dynamic", body=body)
-                processed_stations.append(station_code)
 
         # END OF EVENT LOOP
         ###############################################################################################################

@@ -93,7 +93,7 @@ countries:
     admin-levels:
       - 2
       - 3
-    trigger-on-lead-time: 6
+    trigger-on-lead-time: 7
     trigger-on-return-period: 5
     trigger-on-minimum-probability: 0.8
     classify-alert-on: probability
