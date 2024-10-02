@@ -288,7 +288,7 @@ class Forecast:
             with rasterio.open(empty_raster, "w", **flood_raster_meta) as dest:
                 dest.write(flood_raster_data)
 
-        adm_lvl = self.data.forecast_admin.adm_levels[0]
+        adm_lvl = self.data.forecast_admin.adm_levels[-1]
         for lead_time in self.data.forecast_admin.get_lead_times():
 
             raster_lead_time = self.flood_extent_raster.replace(
