@@ -28,7 +28,6 @@ npm-debug.log*
 
 # Data
 data/*
-*.csv
 *.nc
 
 # Byte-compiled / optimized / DLL files
