@@ -289,16 +289,17 @@ class Forecast:
                 dest.write(flood_raster_data)
 
         adm_lvl = self.data.forecast_admin.adm_levels[-1]
+        # get adm boundaries
+        gdf_adm = self.load.get_adm_boundaries(
+            self.data.forecast_admin.country, adm_lvl
+        )
+        gdf_adm.index = gdf_adm[f"adm{adm_lvl}_pcode"]
+
         for lead_time in self.data.forecast_admin.get_lead_times():
 
             raster_lead_time = self.flood_extent_raster.replace(
                 ".tif", f"_{lead_time}.tif"
             )
-            # get adm boundaries
-            gdf_adm = self.load.get_adm_boundaries(
-                self.data.forecast_admin.country, adm_lvl
-            )
-            gdf_adm.index = gdf_adm[f"adm{adm_lvl}_pcode"]
 
             # calculate flood extent for each triggered admin division
             flood_rasters_admin_div = []
@@ -453,6 +454,7 @@ class Forecast:
                                 )
                                 * 100.0
                             )
+
                         except (ValueError, TypeError, KeyError):
                             forecast_data_unit.pop_affected_perc = 0.0
 

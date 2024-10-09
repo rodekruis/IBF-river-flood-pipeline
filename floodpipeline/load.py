@@ -265,23 +265,24 @@ class Load:
     def get_stations(self, country: str) -> list[dict]:
         """Get GloFAS stations from IBF app"""
         stations = self.ibf_api_get_request(
-            f"point-data/glofas_stations/{country}", parameters={
-                    "disasterType": "flood",
-                    "pointDataCategory": "glofas_stations",
-                    "countryCodeISO3": country
-                }
+            f"point-data/glofas_stations/{country}",
+            parameters={
+                "disasterType": "flood",
+                "pointDataCategory": "glofas_stations",
+                "countryCodeISO3": country,
+            },
         )
         gdf_stations = gpd.GeoDataFrame.from_features(stations["features"])
         stations = []
         for ix, row in gdf_stations.iterrows():
             station = {
-                'stationCode': row['stationCode'],
-                'stationName': row['stationName'],
-                'lat': row['geometry'].y,
-                'lon': row['geometry'].x
+                "stationCode": row["stationCode"],
+                "stationName": row["stationName"],
+                "lat": row["geometry"].y,
+                "lon": row["geometry"].x,
             }
             stations.append(station)
-        
+
         return stations
 
     def send_to_ibf_api(
@@ -374,9 +375,13 @@ class Load:
                             elif indicator == "alert_threshold":
                                 amount = alert_class_to_threshold(
                                     alert_class=forecast_admin.alert_class,
-                                    triggered=True if event_type == "trigger" else False,
+                                    triggered=(
+                                        True if event_type == "trigger" else False
+                                    ),
                                 )
-                            exposure_pcodes.append({"placeCode": pcode, "amount": amount})
+                            exposure_pcodes.append(
+                                {"placeCode": pcode, "amount": amount}
+                            )
                             processed_pcodes.append(pcode)
                         body = {
                             "countryCodeISO3": country,
@@ -417,7 +422,9 @@ class Load:
                             value = forecast_station.return_period
                         elif indicator == "triggerLevel":
                             value = int(
-                                threshold_station.get_threshold(trigger_on_return_period)
+                                threshold_station.get_threshold(
+                                    trigger_on_return_period
+                                )
                             )
                         station_data = {"fid": station_code, "value": value}
                         station_forecasts[indicator].append(station_data)

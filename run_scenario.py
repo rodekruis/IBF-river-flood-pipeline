@@ -6,11 +6,7 @@ from floodpipeline.settings import Settings
 from floodpipeline.scenarios import Scenario
 import datetime
 
-default_events = [
-    {"station-code": "G1329", "type": "low-alert", "lead-time": 5},
-    {"station-code": "G1329", "type": "medium-alert", "lead-time": 6},
-    # {"station-code": "G1329", "type": "trigger", "lead-time": 7},
-]
+default_events = [{"station-code": "G5100", "type": "trigger", "lead-time": 5}]
 
 
 @click.command()
