@@ -177,16 +177,16 @@ class AdminDataSet:
         """Return list of data units filtered by lead time and/or admin level"""
         if not self.data_units:
             raise ValueError("Data units not found")
-        if lead_time and adm_level:
+        if lead_time is not None and adm_level is not None:
             return list(
                 filter(
                     lambda x: x.lead_time == lead_time and x.adm_level == adm_level,
                     self.data_units,
                 )
             )
-        elif lead_time:
+        elif lead_time is not None:
             return list(filter(lambda x: x.lead_time == lead_time, self.data_units))
-        elif adm_level:
+        elif adm_level is not None:
             return list(filter(lambda x: x.adm_level == adm_level, self.data_units))
         else:
             return self.data_units
@@ -195,7 +195,7 @@ class AdminDataSet:
         """Get data unit by pcode and optionally by lead time"""
         if not self.data_units:
             raise ValueError("Data units not found")
-        if lead_time:
+        if lead_time is not None:
             bdu = next(
                 filter(
                     lambda x: x.pcode == pcode and x.lead_time == lead_time,
