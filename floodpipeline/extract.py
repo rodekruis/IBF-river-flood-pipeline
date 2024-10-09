@@ -274,7 +274,24 @@ class Extract:
                 continue
 
             logging.info(f"slicing GloFAS data for ensemble {ensemble}")
-            nc_file = xr.open_dataset(filename_local)
+            try:
+                nc_file = xr.open_dataset(filename_local)
+            except ValueError:
+                logging.warning(
+                    f"Something is wrong with this file, trying to download again"
+                )
+                self.load.get_from_blob(
+                    filename_local,
+                    f"{self.settings.get_setting('blob_storage_path')}"
+                    f"/glofas-data/{date}/dis_{'{:02d}'.format(ensemble)}_{date}00.nc",
+                )
+                try:
+                    nc_file = xr.open_dataset(filename_local)
+                except ValueError:
+                    logging.warning(
+                        f"Something is definitely wrong with this file, skipping"
+                    )
+                    continue
 
             # Slice netcdf file to country boundaries
             country_bounds = country_gdf.total_bounds
