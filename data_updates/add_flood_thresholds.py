@@ -101,7 +101,12 @@ def add_flood_thresholds(country):
                     pcode=row[f"adm{adm_level}_pcode"],
                     thresholds=[
                         Threshold(
-                            return_period=float(rp), threshold_value=row[f"max_{rp}"]
+                            return_period=float(rp),
+                            threshold_value=(
+                                row[f"max_{rp}"]
+                                if not pd.isna(row[f"max_{rp}"])
+                                else 1.0e6
+                            ),
                         )
                         for rp in RETURN_PERIODS
                     ],
@@ -153,27 +158,43 @@ def add_flood_thresholds(country):
         # if there is an explicit mapping, use that
         district_mapping = f"config/{country_name}_station_district_mapping.csv"
         if os.path.exists(district_mapping):
-            df = pd.read_csv(district_mapping, dtype={'placeCode': str})
+            df = pd.read_csv(district_mapping, dtype={"placeCode": str})
             bottom_adm_level = country_settings["admin-levels"][-1]
-            for station_code in df['glofasStation'].unique():
+            for station_code in df["glofasStation"].unique():
                 if station_code == "no_station":
                     continue
-                pcodes_stations[station_code] = {bottom_adm_level: list(df[df["glofasStation"]==station_code]['placeCode'].unique())}
+                pcodes_stations[station_code] = {
+                    bottom_adm_level: list(
+                        df[df["glofasStation"] == station_code]["placeCode"].unique()
+                    )
+                }
                 for adm_level in reversed(country_settings["admin-levels"][:-1]):
-                    adm_gdf = load.get_adm_boundaries(country=country_name, adm_level=adm_level+1)
+                    adm_gdf = load.get_adm_boundaries(
+                        country=country_name, adm_level=adm_level + 1
+                    )
                     pcodes = []
-                    for child_pcode in pcodes_stations[station_code][adm_level+1]:
-                        pcodes.append(list(adm_gdf[adm_gdf[f"adm{adm_level+1}_pcode"]==child_pcode][f"adm{adm_level}_pcode"].unique()))
+                    for child_pcode in pcodes_stations[station_code][adm_level + 1]:
+                        pcodes.append(
+                            list(
+                                adm_gdf[
+                                    adm_gdf[f"adm{adm_level+1}_pcode"] == child_pcode
+                                ][f"adm{adm_level}_pcode"].unique()
+                            )
+                        )
                     pcodes = list(set([str(x) for xs in pcodes for x in xs]))
                     if len(pcodes) == 0:
-                        print(pcodes_stations[station_code][adm_level+1])
+                        print(pcodes_stations[station_code][adm_level + 1])
                         print(adm_gdf[f"adm{adm_level+1}_pcode"].unique())
-                        raise ValueError(f"pcodes in district_mapping.csv do not correspond to those in IBF app for adm_level {adm_level}")
+                        raise ValueError(
+                            f"pcodes in district_mapping.csv do not correspond to those in IBF app for adm_level {adm_level}"
+                        )
                     pcodes_stations[station_code][adm_level] = pcodes
         # otherwise, calculate based on river maps
         else:
             river_filepath = f"data/updates/rivers.gpkg"
-            country_gdf = load.get_adm_boundaries(country=country_name, adm_level=country_settings["admin-levels"][0])
+            country_gdf = load.get_adm_boundaries(
+                country=country_name, adm_level=country_settings["admin-levels"][0]
+            )
 
             # get geodataframe of rivers
             if not os.path.exists(river_filepath):
@@ -210,23 +231,33 @@ def add_flood_thresholds(country):
             gdf_rivers = gdf_rivers.to_crs(projected_crs)
 
             # create a geodataframe with stations and river(s) which pass by them
-            gdf_station_nearest_river = gpd.sjoin_nearest(gdf_stations, gdf_rivers).merge(
-                gdf_rivers, left_on="index_right", right_index=True
+            gdf_station_nearest_river = gpd.sjoin_nearest(
+                gdf_stations, gdf_rivers
+            ).merge(gdf_rivers, left_on="index_right", right_index=True)
+            gdf_station_nearest_river["geometry"] = gdf_station_nearest_river[
+                "geometry_y"
+            ]
+            gdf_station_nearest_river = gdf_station_nearest_river.dissolve(
+                "stationCode"
             )
-            gdf_station_nearest_river["geometry"] = gdf_station_nearest_river["geometry_y"]
-            gdf_station_nearest_river = gdf_station_nearest_river.dissolve("stationCode")
-            station_river = gpd.GeoDataFrame(geometry=gdf_station_nearest_river["geometry"])
+            station_river = gpd.GeoDataFrame(
+                geometry=gdf_station_nearest_river["geometry"]
+            )
 
             # for each adm level and station, get pcodes of adm divisions intersecting the river(s) passing by the station
             top_adm_level = country_settings["admin-levels"][0]
             for adm_level in country_settings["admin-levels"]:
-                adm_gdf = load.get_adm_boundaries(country=country_name, adm_level=adm_level)
+                adm_gdf = load.get_adm_boundaries(
+                    country=country_name, adm_level=adm_level
+                )
                 adm_gdf = adm_gdf.to_crs(projected_crs)
 
                 for ix, station_river_record in station_river.iterrows():
                     if adm_level == top_adm_level:
                         adm_gdf_station = adm_gdf[
-                            station_river_record["geometry"].intersects(adm_gdf.geometry)
+                            station_river_record["geometry"].intersects(
+                                adm_gdf.geometry
+                            )
                         ]
                     else:
                         adm_gdf_station = adm_gdf[
@@ -234,12 +265,13 @@ def add_flood_thresholds(country):
                                 pcodes_stations[ix][adm_level - 1]
                             )
                         ]
-                    pcodes = list(set(adm_gdf_station[f"adm{adm_level}_pcode"].to_list()))
+                    pcodes = list(
+                        set(adm_gdf_station[f"adm{adm_level}_pcode"].to_list())
+                    )
                     if ix not in pcodes_stations.keys():
                         pcodes_stations[ix] = {adm_level: pcodes}
                     else:
                         pcodes_stations[ix][adm_level] = pcodes
-
 
         # save thresholds
         threshold_station_data = StationDataSet(
