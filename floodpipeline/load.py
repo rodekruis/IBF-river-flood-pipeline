@@ -343,7 +343,7 @@ class Load:
                     station_code, trigger_on_lead_time
                 ).station_name
                 event_name = str(station_name) if station_name else str(station_code)
-                if event_name == "":
+                if event_name == "" or event_name == "None" or event_name == "Na":
                     event_name = str(station_code)
 
                 logging.info(
