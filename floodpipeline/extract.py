@@ -174,7 +174,9 @@ class Extract:
                         key = f'{row[f"adm{adm_level}_pcode"]}_{lead_time}'
                         if key not in discharges.keys():
                             discharges[key] = []
-                        discharges[key].append(row["max"])
+                        discharges[key].append(
+                            row["max"] if not pd.isna(row["max"]) else 0.0
+                        )
 
             for lead_time, pcode in itertools.product(
                 range(1, 8), list(country_gdf[f"adm{adm_level}_pcode"].unique())
@@ -223,7 +225,13 @@ class Extract:
                         key = f"{station.station_code}_{lead_time}"
                         if key not in discharges_stations.keys():
                             discharges_stations[key] = []
-                        discharges_stations[key].append(max(discharges))
+                        try:
+                            max_discharge = max(discharges)
+                        except:
+                            max_discharge = 0.0
+                        discharges_stations[key].append(
+                            max_discharge if not pd.isna(max_discharge) else 0.0
+                        )
 
         for station_code in self.data.threshold_station.get_station_codes():
             station = self.data.threshold_station.get_data_unit(
