@@ -23,7 +23,7 @@ countries:
       - 2
       - 3
       - 4
-    trigger-on-lead-time: 5
+    trigger-on-lead-time: 7
     trigger-on-return-period: 5
     trigger-on-minimum-probability: 0.6
     classify-alert-on: return-period
@@ -39,27 +39,27 @@ countries:
       - 3
     trigger-on-lead-time: 7
     trigger-on-return-period: 5
-    trigger-on-minimum-probability: 0.8
+    trigger-on-minimum-probability: 0.85
     classify-alert-on: probability
     alert-on-return-period: 5
     alert-on-minimum-probability:
-      min: 0.6
-      med: 0.7
-      max: 0.8
+      min: 0.65
+      med: 0.75
+      max: 0.85
 
   - name: ETH
     admin-levels:
       - 2
       - 3
     trigger-on-lead-time: 7
-    trigger-on-return-period: 2
-    trigger-on-minimum-probability: 0.8
+    trigger-on-return-period: 10
+    trigger-on-minimum-probability: 0.75
     classify-alert-on: probability
-    alert-on-return-period: 2
+    alert-on-return-period: 10
     alert-on-minimum-probability:
-      min: 0.6
-      med: 0.7
-      max: 0.8
+      min: 0.55
+      med: 0.65
+      max: 0.75
 
   - name: ZMB
     admin-levels:
@@ -80,28 +80,28 @@ countries:
       - 2
       - 3
     trigger-on-lead-time: 7
-    trigger-on-return-period: 2
-    trigger-on-minimum-probability: 0.8
+    trigger-on-return-period: 5
+    trigger-on-minimum-probability: 0.6
     classify-alert-on: probability
-    alert-on-return-period: 2
+    alert-on-return-period: 5
     alert-on-minimum-probability:
-      min: 0.6
-      med: 0.7
-      max: 0.8
+      min: 0.4
+      med: 0.5
+      max: 0.6
 
   - name: MWI
     admin-levels:
       - 2
       - 3
-    trigger-on-lead-time: 7
+    trigger-on-lead-time: 6
     trigger-on-return-period: 5
-    trigger-on-minimum-probability: 0.8
+    trigger-on-minimum-probability: 0.6
     classify-alert-on: probability
     alert-on-return-period: 5
     alert-on-minimum-probability:
-      min: 0.6
-      med: 0.7
-      max: 0.8
+      min: 0.4
+      med: 0.5
+      max: 0.6
 
   - name: PHL
     admin-levels:
