@@ -29,7 +29,7 @@ countries:
     classify-alert-on: return-period
     alert-on-return-period:
       min: 1.5
-      med: 3
+      med: 2
       max: 5
     alert-on-minimum-probability: 0.6
 
