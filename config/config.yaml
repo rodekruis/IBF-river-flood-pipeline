@@ -23,7 +23,7 @@ countries:
       - 2
       - 3
       - 4
-    trigger-on-lead-time: 7
+    trigger-on-lead-time: 5
     trigger-on-return-period: 5
     trigger-on-minimum-probability: 0.6
     classify-alert-on: return-period
@@ -40,7 +40,7 @@ countries:
     trigger-on-lead-time: 7
     trigger-on-return-period: 5
     trigger-on-minimum-probability: 0.85
-    classify-alert-on: probability
+    classify-alert-on: disable
     alert-on-return-period: 5
     alert-on-minimum-probability:
       min: 0.65
@@ -54,7 +54,7 @@ countries:
     trigger-on-lead-time: 7
     trigger-on-return-period: 10
     trigger-on-minimum-probability: 0.75
-    classify-alert-on: probability
+    classify-alert-on: disable
     alert-on-return-period: 10
     alert-on-minimum-probability:
       min: 0.55
@@ -82,7 +82,7 @@ countries:
     trigger-on-lead-time: 7
     trigger-on-return-period: 5
     trigger-on-minimum-probability: 0.6
-    classify-alert-on: probability
+    classify-alert-on: disable
     alert-on-return-period: 5
     alert-on-minimum-probability:
       min: 0.4
@@ -96,7 +96,7 @@ countries:
     trigger-on-lead-time: 6
     trigger-on-return-period: 5
     trigger-on-minimum-probability: 0.6
-    classify-alert-on: probability
+    classify-alert-on: disable
     alert-on-return-period: 5
     alert-on-minimum-probability:
       min: 0.4
@@ -110,7 +110,7 @@ countries:
     trigger-on-lead-time: 3
     trigger-on-return-period: 5
     trigger-on-minimum-probability: 0.8
-    classify-alert-on: probability
+    classify-alert-on: disable
     alert-on-return-period: 5
     alert-on-minimum-probability:
       min: 0.6

@@ -46,6 +46,8 @@ def upload_scenario(scenario, country):
         stations = ["G5075", "G5189", "G5196", "G5317"]
     elif country == "KEN":
         stations = ["G5142", "G5305"]
+    elif country == "PHL":
+        stations = ["G1966", "G1967"]
     else:
         raise ValueError(f"country {country} not supported")
     scenario.get_discharge_scenario(random_stations=False, stations=stations)

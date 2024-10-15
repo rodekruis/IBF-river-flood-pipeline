@@ -60,6 +60,7 @@ def clip_raster(
 
 
 def classify_alert(
+    triggered: str,
     likelihood_per_return_period: dict,
     classify_alert_on: str,
     alert_on_return_period,
@@ -109,9 +110,15 @@ def classify_alert(
                 >= minimum_probability
             ):
                 alert_class = class_
+    elif classify_alert_on == 'disable':
+        if triggered:
+            alert_class = max(
+                alert_on_minimum_probability, 
+                key=alert_on_minimum_probability.get
+            )
     else:
         raise ValueError(
-            "classify-alert-on should be either 'return-period' or 'probability'"
+            "classify-alert-on should be either 'return-period' or 'probability' or 'disable"
         )
     return alert_class
 
@@ -242,6 +249,7 @@ class Forecast:
 
                 # determine the alert class
                 alert_class = classify_alert(
+                    triggered,
                     likelihood_per_return_period,
                     classify_alert_on,
                     alert_on_return_period,
@@ -536,6 +544,7 @@ class Forecast:
 
             # determine the alert class
             alert_class = classify_alert(
+                triggered,
                 likelihood_per_return_period,
                 classify_alert_on,
                 alert_on_return_period,
