@@ -146,6 +146,17 @@ class Scenario:
             alert_on_probability = self.pipe.settings.get_country_setting(
                 self.country, "alert-on-minimum-probability"
             )["med"]
+        elif classify_alert_on == "disable":
+            alert_on_return_period = self.pipe.settings.get_country_setting(
+                self.country, "alert-on-return-period"
+            )
+            # if type(alert_on_return_period) == dict:
+            #     alert_on_return_period = alert_on_return_period["max"]
+            alert_on_probability = self.pipe.settings.get_country_setting(
+                self.country, "alert-on-minimum-probability"
+            )["max"]
+            # if type(alert_on_probability) == dict:
+            #     alert_on_probability = alert_on_probability["max"]
         alert_classes = ["min", "med", "min", "med"]
 
         if not random_stations:
