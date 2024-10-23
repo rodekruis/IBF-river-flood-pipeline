@@ -346,6 +346,12 @@ class Load:
                 if event_name == "" or event_name == "None" or event_name == "Na":
                     event_name = str(station_code)
 
+                # hot fix lead time 0
+                try:
+                    forecast_station_data.get_data_unit(station_code, lead_time_event)
+                except ValueError:
+                    lead_time_event = lead_time_event + 1
+
                 logging.info(
                     f"event {event_name}, type '{event_type}', lead time {lead_time_event}"
                 )
