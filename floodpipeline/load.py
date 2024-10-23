@@ -314,7 +314,7 @@ class Load:
 
             # determine events
             events = {}
-            for lead_time in range(0, 8):
+            for lead_time in range(1, 8):
                 if (
                     forecast_station_data.get_data_unit(
                         station_code, lead_time
@@ -323,7 +323,7 @@ class Load:
                 ):
                     lead_time_event = lead_time
                     events[lead_time] = "alert"
-            for lead_time in range(0, 8):
+            for lead_time in range(1, 8):
                 if forecast_station_data.get_data_unit(
                     station_code, lead_time
                 ).triggered:
@@ -345,12 +345,6 @@ class Load:
                 event_name = str(station_name) if station_name else str(station_code)
                 if event_name == "" or event_name == "None" or event_name == "Na":
                     event_name = str(station_code)
-
-                # hot fix lead time 0
-                try:
-                    forecast_station_data.get_data_unit(station_code, lead_time_event)
-                except ValueError:
-                    lead_time_event = lead_time_event + 1
 
                 logging.info(
                     f"event {event_name}, type '{event_type}', lead time {lead_time_event}"
