@@ -335,13 +335,11 @@ class Load:
                     ).alert_class
                     != "no"
                 ):
-                    lead_time_event = lead_time
                     events[lead_time] = "alert"
             for lead_time in range(1, 8):
                 if forecast_station_data.get_data_unit(
                     station_code, lead_time
                 ).triggered:
-                    lead_time_event = lead_time
                     events[lead_time] = "trigger"
                     triggered_lead_times.append(lead_time)
             if not events:

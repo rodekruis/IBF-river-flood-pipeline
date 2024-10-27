@@ -1,6 +1,7 @@
 from floodpipeline.pipeline import Pipeline
 from floodpipeline.secrets import Secrets
 from floodpipeline.settings import Settings
+from datetime import date, datetime, timedelta
 import click
 
 
@@ -12,12 +13,26 @@ import click
 @click.option("--send", help="send to IBF", default=False, is_flag=True)
 @click.option("--save", help="save to storage", default=False, is_flag=True)
 @click.option(
+    "--datetimestart",
+    help="datetime start ISO 8601",
+    default=date.today().strftime("%Y-%m-%dT%H:%M:%S"),
+)
+@click.option(
+    "--datetimeend",
+    help="datetime end ISO 8601",
+    default=(date.today() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S"),
+)
+@click.option(
     "--debug",
     help="debug mode: process only one ensemble member from yesterday",
     default=False,
     is_flag=True,
 )
-def run_river_flood_pipeline(country, prepare, extract, forecast, send, save, debug):
+def run_river_flood_pipeline(
+    country, prepare, extract, forecast, send, save, datetimestart, datetimeend, debug
+):
+    datetimestart = datetime.strptime(datetimestart, "%Y-%m-%dT%H:%M:%S")
+    datetimeend = datetime.strptime(datetimeend, "%Y-%m-%dT%H:%M:%S")
     pipe = Pipeline(
         country=country,
         settings=Settings("config/config.yaml"),
@@ -30,6 +45,8 @@ def run_river_flood_pipeline(country, prepare, extract, forecast, send, save, de
         send=send,
         save=save,
         debug=debug,
+        datetimestart=datetimestart,
+        datetimeend=datetimeend,
     )
 
 
