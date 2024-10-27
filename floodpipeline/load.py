@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os.path
 import copy
+import time
+
 from floodpipeline.secrets import Secrets
 from floodpipeline.settings import Settings
 from floodpipeline.data import (
@@ -189,13 +191,25 @@ class Load:
         return gdf
 
     def __ibf_api_authenticate(self):
-        login_response = requests.post(
-            self.secrets.get_secret("IBF_API_URL") + "user/login",
-            data=[
-                ("email", self.secrets.get_secret("IBF_API_USER")),
-                ("password", self.secrets.get_secret("IBF_API_PASSWORD")),
-            ],
-        )
+        no_attempts, attempt, login_response = 5, 0, None
+        while attempt < no_attempts:
+            try:
+                login_response = requests.post(
+                    self.secrets.get_secret("IBF_API_URL") + "user/login",
+                    data=[
+                        ("email", self.secrets.get_secret("IBF_API_USER")),
+                        ("password", self.secrets.get_secret("IBF_API_PASSWORD")),
+                    ],
+                )
+                break
+            except requests.exceptions.ConnectionError:
+                attempt += 1
+                logging.warning(
+                    "IBF API currently not available, trying again in 1 minute"
+                )
+                time.sleep(60)
+        if not login_response:
+            raise ConnectionError("IBF API not available")
         return login_response.json()["user"]["token"]
 
     def ibf_api_post_request(self, path, body=None, files=None):
@@ -788,12 +802,12 @@ class Load:
         if len(datasets) == 0:
             raise KeyError(
                 f"No datasets of type '{data_type}' found for country {country} in date range "
-                f"{start_date}-{end_date}."
+                f"{start_date} - {end_date}."
             )
         elif len(datasets) > 1:
             logging.warning(
                 f"Multiple datasets of type '{data_type}' found for country {country} in date range "
-                f"{start_date}-{end_date}; returning the latest (timestamp {datasets[-1].timestamp}). "
+                f"{start_date} - {end_date}; returning the latest (timestamp {datasets[-1].timestamp}). "
             )
         return datasets[-1]
 
