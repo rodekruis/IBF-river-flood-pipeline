@@ -51,6 +51,8 @@ class Pipeline:
         send: bool = True,
         save: bool = False,
         debug: bool = False,  # fast extraction on yesterday's data
+        datetimestart: datetime = date.today(),
+        datetimeend: datetime = date.today() + timedelta(days=1),
     ):
         """Run the flood data pipeline"""
 
@@ -74,14 +76,14 @@ class Pipeline:
             self.data.discharge_admin = self.load.get_pipeline_data(
                 data_type="discharge",
                 country=self.country,
-                start_date=date.today(),
-                end_date=date.today() + timedelta(days=1),
+                start_date=datetimestart,
+                end_date=datetimeend,
             )
             self.data.discharge_station = self.load.get_pipeline_data(
                 data_type="discharge-station",
                 country=self.country,
-                start_date=date.today(),
-                end_date=date.today() + timedelta(days=1),
+                start_date=datetimestart,
+                end_date=datetimeend,
             )
 
         if forecast:
@@ -102,14 +104,14 @@ class Pipeline:
                 self.data.forecast_admin = self.load.get_pipeline_data(
                     data_type="forecast",
                     country=self.country,
-                    start_date=date.today(),
-                    end_date=date.today() + timedelta(days=1),
+                    start_date=datetimestart,
+                    end_date=datetimeend,
                 )
                 self.data.forecast_station = self.load.get_pipeline_data(
                     data_type="forecast-station",
                     country=self.country,
-                    start_date=date.today(),
-                    end_date=date.today() + timedelta(days=1),
+                    start_date=datetimestart,
+                    end_date=datetimeend,
                 )
             logging.info("send data to IBF API")
             self.load.send_to_ibf_api(
