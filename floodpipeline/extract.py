@@ -199,6 +199,11 @@ class Extract:
                 self.inputPathGrid,
                 f"GloFAS_{date}_{country}_{ensemble}.nc",
             )
+            if not os.path.exists(filename):
+                logging.warning(
+                    f"Country-specific NetCDF file of ensemble {ensemble} not found, skipping"
+                )
+                continue
             with rasterio.open(filename) as src:
                 for station_code in self.data.threshold_station.get_station_codes():
                     station = self.data.threshold_station.get_data_unit(
