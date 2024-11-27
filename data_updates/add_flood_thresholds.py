@@ -129,25 +129,12 @@ def add_flood_thresholds(country):
         for rp, filename in flood_thresholds_files.items():
             with rasterio.open(filename) as src:
                 for station in stations:
-                    discharges = []
-                    for shiftx in [-0.01, 0.01]:
-                        for shifty in [-0.01, 0.01]:
-                            coords = [
-                                (
-                                    float(station["lon"]) + shiftx,
-                                    float(station["lat"]) + shifty,
-                                )
-                            ]
-                            discharge = float(
-                                [x[0] for x in src.sample(coords, indexes=1)][0]
-                            )
-                            discharges.append(discharge)
+                    coords = [(float(station["lon"]), float(station["lat"]))]
+                    discharge = float([x[0] for x in src.sample(coords, indexes=1)][0])
                     if station["stationCode"] not in threshold_stations.keys():
                         threshold_stations[station["stationCode"]] = []
                     threshold_stations[station["stationCode"]].append(
-                        Threshold(
-                            return_period=float(rp), threshold_value=max(discharges)
-                        )
+                        Threshold(return_period=float(rp), threshold_value=discharge)
                     )
 
         print(

@@ -209,33 +209,17 @@ class Extract:
                     station = self.data.threshold_station.get_data_unit(
                         station_code=station_code
                     )  # get station information from preloaded thresholds
+                    coords = [(float(station.lon), float(station.lat))]
                     for lead_time in range(1, 8):
                         # Extract data for stations
-                        discharges = []
-                        for shiftx in [-0.01, 0.01]:
-                            for shifty in [-0.01, 0.01]:
-                                coords = [
-                                    (
-                                        float(station.lon) + shiftx,
-                                        float(station.lat) + shifty,
-                                    )
-                                ]
-                                discharge = float(
-                                    [
-                                        x[0]
-                                        for x in src.sample(coords, indexes=lead_time)
-                                    ][0]
-                                )
-                                discharges.append(discharge)
+                        discharge = float(
+                            [x[0] for x in src.sample(coords, indexes=lead_time)][0]
+                        )
                         key = f"{station.station_code}_{lead_time}"
                         if key not in discharges_stations.keys():
                             discharges_stations[key] = []
-                        try:
-                            max_discharge = max(discharges)
-                        except:
-                            max_discharge = 0.0
                         discharges_stations[key].append(
-                            max_discharge if not pd.isna(max_discharge) else 0.0
+                            discharge if not pd.isna(discharge) else 0.0
                         )
 
         for station_code in self.data.threshold_station.get_station_codes():
