@@ -9,6 +9,7 @@ credentials/.env
 !credentials/.env-example
 *.env
 logs/
+debug/
 
 # Generated files
 dist
