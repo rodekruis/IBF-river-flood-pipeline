@@ -70,6 +70,7 @@ def classify_alert(
     Classify alert based as specified in config file
     """
     alert_class = "no"
+    infinity = 1 / 0
     if classify_alert_on == "return-period":
         if (
             type(alert_on_return_period) != dict
@@ -110,22 +111,12 @@ def classify_alert(
                 >= minimum_probability
             ):
                 alert_class = class_
-    elif classify_alert_on == 'disable':
-        if (
-            triggered 
-            and type(alert_on_return_period) == dict
-        ):
+    elif classify_alert_on == "disable":
+        if triggered and type(alert_on_return_period) == dict:
+            alert_class = max(alert_on_return_period, key=alert_on_return_period.get)
+        elif triggered and type(alert_on_minimum_probability) == dict:
             alert_class = max(
-                alert_on_return_period, 
-                key=alert_on_return_period.get
-            )
-        elif (
-            triggered 
-            and type(alert_on_minimum_probability) == dict
-        ):
-            alert_class = max(
-                alert_on_minimum_probability, 
-                key=alert_on_minimum_probability.get
+                alert_on_minimum_probability, key=alert_on_minimum_probability.get
             )
     else:
         raise ValueError(
