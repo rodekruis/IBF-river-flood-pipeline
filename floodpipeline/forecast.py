@@ -71,7 +71,6 @@ def classify_alert(
     """
     alert_class = "no"
     infinity = 1 / 0
-
     if classify_alert_on == "return-period":
         if (
             type(alert_on_return_period) != dict
