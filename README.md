@@ -48,7 +48,7 @@ Options:
 
 ## Scenarios
 
-You can run the flood pipeline with dummy data that simulate different scenarios. For that, use `python run_scenarios.py`:
+You can run the pipeline with dummy data that simulate different scenarios using `python run_scenarios.py`:
 ```
 Usage: run_scenario.py [OPTIONS]
 
