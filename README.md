@@ -34,16 +34,69 @@ poetry install --no-interaction
 Usage: flood_pipeline.py [OPTIONS]
 
 Options:
-  --country TEXT  country ISO3
-  --prepare       prepare discharge data
-  --extract       extract discharge data
-  --forecast      forecast floods
-  --send          send to IBF app
-  --save          save to storage
-  --help          Show this message and exit.
+  --country TEXT        country ISO3
+  --prepare             prepare discharge data
+  --extract             extract discharge data
+  --forecast            forecast floods
+  --send                send to IBF
+  --save                save to storage
+  --datetimestart TEXT  datetime start ISO 8601
+  --datetimeend TEXT    datetime end ISO 8601
+  --debug               debug mode: process only one ensemble member from yesterday
+  --help                show this message and exit.
 ```
 
+## Scenarios
+
+You can run the flood pipeline with dummy data that simulate different scenarios. For that, use `python run_scenarios.py`:
+```
+Usage: run_scenario.py [OPTIONS]
+
+Options:
+  -s, --events TEXT       list of events
+  -c, --country TEXT      country
+  -d, --upload_time TEXT  upload datetime [optional]
+  --help                  show this message and exit
+```
+
+The scenario is entirely defined by the `events` parameter, which is a list of dictionaries. Each dictionary represents a flood event and has the following keys:
+* `station-code`: the unique ID of the GloFAS station
+* `type`: the type of the event, either `trigger`, `low-alert`, `medium-alert`, or `no-trigger`
+* `lead-time`: the number of days between the forecast and the event
+
+Example of a scenario for Kenya with two events:
+```
+python run_scenario.py -c "KEN" -s '[{"station-code": "G5305", "type": "trigger", "lead-time": 5}, {"station-code": "G5142", "type": "medium-alert", "lead-time": 7}]'
+```
+
+> [!TIP]
+> Scenarios can be run remotely and loaded to [ibf-test](https://ibf-test.510.global/) through the logic app [river-flood-pipeline-scenario](https://portal.azure.com/#@rodekruis.onmicrosoft.com/resource/subscriptions/57b0d17a-5429-4dbb-8366-35c928e3ed94/resourceGroups/IBF-system/providers/Microsoft.Logic/workflows/river-flood-pipeline-scenario/logicApp). 
+> Just make a POST request[^1] to the logic app .
+
 ## Advanced Usage
+
+### Bug fixing
+
+1. Identify error of the most recent run in history of [river-flood-pipeline-prod](https://portal.azure.com/#@rodekruis.onmicrosoft.com/resource/subscriptions/57b0d17a-5429-4dbb-8366-35c928e3ed94/resourceGroups/IBF-system/providers/Microsoft.Logic/workflows/river-flood-pipeline-prod/logicApp):
+   * Check run time --> if too short or too long
+   * Check all the action if they have green ticks (not completed actions)
+   * Check the logs in "get log from container instance" 
+   * Find out which part of code fails based on traceback and error messages
+2. Fix the bug on `dev` and test:
+   * Checkout the `dev` branch and pull the latest changes (`git checkout dev && git pull`)
+   * Fix the bug
+   * [OPTIONAL] Test locally, if you have time / disk space: the pipeline takes about 1h and a few GBs of disk space
+   * Commit and push the changes to the `dev` branch (`git add . && git commit -m "bug fix" && git push`)
+   * Test remotely with [river-flood-pipeline-dev](https://portal.azure.com/#@rodekruis.onmicrosoft.com/resource/subscriptions/57b0d17a-5429-4dbb-8366-35c928e3ed94/resourceGroups/IBF-system/providers/Microsoft.Logic/workflows/river-flood-pipeline-dev/logicApp), which will upload the output to [ibf-test](https://ibf-test.510.global/); 
+just make a POST request[^1] to the logic app with e.g. payload `country`: `KEN`..
+3. Deploy to `prod`:
+   * make a Pull Request (PR) from `dev` to `main` and inform IBF team that it needs to be merged
+4. Re-submit the failed run of [river-flood-pipeline-prod](https://portal.azure.com/#@rodekruis.onmicrosoft.com/resource/subscriptions/57b0d17a-5429-4dbb-8366-35c928e3ed94/resourceGroups/IBF-system/providers/Microsoft.Logic/workflows/river-flood-pipeline-prod/logicApp) or wait for it to run again the next day.
+
+The pipeline uses [Github Actions workflows](https://github.com/rodekruis/IBF-river-flood-pipeline/tree/main/.github/workflows) to automatically deploy code changes to Azure. Specifically:
+* Code changes to the `dev` branch are deployed to the dev docker image and used in the dev logic app
+
+[^1]: The URL and Request Body JSON Schema are visible in `Develooment Tools` > `Logic app deisgner` > `HTTP request trigger`.
 
 ### How do I set up the pipeline for a new country?
 
@@ -64,9 +117,9 @@ python data_updates\add_flood_thresholds.py --country <country ISO3>
 You don't. The pipeline is designed to work in the same way for all countries.
 If you need to change the pipeline's behavior for a specific country, please discuss your needs with your fellow data specialist, they will try their best to accommodate your request.
 
-### There is a new version of GloFAS, how do I update the pipeline?
+### There is a new version of GloFAS, should I update the pipeline? How?
 
-GloFAS should take care to update the river discharge data in a backward-compatible way. If that is not the case, you need 
+GloFAS should update river discharge data in a backward-compatible way, i.e. without changing the data model. If that is not the case, you need 
 to have a look at `floodpipeline/extract.py` and change what's needed.
 
 What will probably change with the new GloFAS version are the trigger/alert thresholds. To update them you need to
