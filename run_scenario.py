@@ -10,12 +10,12 @@ default_events = [{"station-code": "G5100", "type": "trigger", "lead-time": 5}]
 
 
 @click.command()
-@click.option("--events", "-s", help="events", default=default_events)
+@click.option("--events", "-s", help="list of events", default=default_events)
 @click.option("--country", "-c", help="country", default="UGA")
 @click.option(
     "--upload_time",
     "-d",
-    help="datetime",
+    help="upload datetime [optional]",
     default=datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
 )
 def run_scenario(events, country, upload_time):
