@@ -70,8 +70,8 @@ python run_scenario.py -c "KEN" -s '[{"station-code": "G5305", "type": "trigger"
 ```
 
 > [!TIP]
-> Scenarios can be run remotely and loaded to [ibf-test](https://ibf-test.510.global/) through the logic app [river-flood-pipeline-scenario](https://portal.azure.com/#@rodekruis.onmicrosoft.com/resource/subscriptions/57b0d17a-5429-4dbb-8366-35c928e3ed94/resourceGroups/IBF-system/providers/Microsoft.Logic/workflows/river-flood-pipeline-scenario/logicApp). 
-> Just make a POST request[^1] to the logic app .
+> Scenarios can be run remotely and loaded to [ibf-test](https://ibf-test.510.global/) through the Logic App [river-flood-pipeline-scenario](https://portal.azure.com/#@rodekruis.onmicrosoft.com/resource/subscriptions/57b0d17a-5429-4dbb-8366-35c928e3ed94/resourceGroups/IBF-system/providers/Microsoft.Logic/workflows/river-flood-pipeline-scenario/logicApp). 
+> Just make a POST request to the Logic App[^1] with the necessary payload.
 
 ## Advanced Usage
 
@@ -93,10 +93,6 @@ just make a POST request[^1] to the logic app with e.g. payload `country`: `KEN`
    * make a Pull Request (PR) from `dev` to `main` and inform IBF team that it needs to be merged
 4. Re-submit the failed run of [river-flood-pipeline-prod](https://portal.azure.com/#@rodekruis.onmicrosoft.com/resource/subscriptions/57b0d17a-5429-4dbb-8366-35c928e3ed94/resourceGroups/IBF-system/providers/Microsoft.Logic/workflows/river-flood-pipeline-prod/logicApp) or wait for it to run again the next day.
 
-The pipeline uses [Github Actions workflows](https://github.com/rodekruis/IBF-river-flood-pipeline/tree/main/.github/workflows) to automatically deploy code changes to Azure. Specifically:
-* Code changes to the `dev` branch are deployed to the dev docker image and used in the dev logic app
-
-[^1]: The URL and Request Body JSON Schema are visible in `Develooment Tools` > `Logic app deisgner` > `HTTP request trigger`.
 
 ### How do I set up the pipeline for a new country?
 
@@ -122,7 +118,9 @@ If you need to change the pipeline's behavior for a specific country, please dis
 GloFAS should update river discharge data in a backward-compatible way, i.e. without changing the data model. If that is not the case, you need 
 to have a look at `floodpipeline/extract.py` and change what's needed.
 
-What will probably change with the new GloFAS version are the trigger/alert thresholds. To update them you need to
-1. Change the 
+What will probably change with the new GloFAS version are the trigger/alert thresholds. To update the trigger/alert thresholds... [TBI].
+
+[^1]: The URL and Request Body JSON Schema of the Logic App trigger are visible in `Develooment Tools` > `Logic app deisgner` > `HTTP request trigger`.
+
 
 
