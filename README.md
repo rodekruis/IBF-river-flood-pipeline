@@ -71,26 +71,32 @@ python run_scenario.py -c "KEN" -s '[{"station-code": "G5305", "type": "trigger"
 
 > [!TIP]
 > Scenarios can be run remotely and loaded to [ibf-test](https://ibf-test.510.global/) through the Logic App [river-flood-pipeline-scenario](https://portal.azure.com/#@rodekruis.onmicrosoft.com/resource/subscriptions/57b0d17a-5429-4dbb-8366-35c928e3ed94/resourceGroups/IBF-system/providers/Microsoft.Logic/workflows/river-flood-pipeline-scenario/logicApp). 
-> Just make a POST request to the Logic App[^1] with the necessary payload.
+> Just make a POST request to the Logic App with the necessary payload[^1].
 
 ## Advanced Usage
 
 ### Bug fixing
 
-1. Identify error of the most recent run in history of [river-flood-pipeline-prod](https://portal.azure.com/#@rodekruis.onmicrosoft.com/resource/subscriptions/57b0d17a-5429-4dbb-8366-35c928e3ed94/resourceGroups/IBF-system/providers/Microsoft.Logic/workflows/river-flood-pipeline-prod/logicApp):
-   * Check run time --> if too short or too long
-   * Check all the action if they have green ticks (not completed actions)
-   * Check the logs in "get log from container instance" 
-   * Find out which part of code fails based on traceback and error messages
+1. Identify the error in the most recent runs of [river-flood-pipeline-prod](https://portal.azure.com/#@rodekruis.onmicrosoft.com/resource/subscriptions/57b0d17a-5429-4dbb-8366-35c928e3ed94/resourceGroups/IBF-system/providers/Microsoft.Logic/workflows/river-flood-pipeline-prod/logicApp):
+   * Check run time, if too short or too long (should be about 30-90 min)
+   * Check if any action doesn't have a green tick (failed action)
+   * Check the logs in "Get logs from a container instance" 
+   * Find out which part of code fails based on traceback and error messages in the logs
 2. Fix the bug on `dev` and test:
    * Checkout the `dev` branch and pull the latest changes (`git checkout dev && git pull`)
    * Fix the bug
-   * [OPTIONAL] Test locally, if you have time / disk space: the pipeline takes about 1h and a few GBs of disk space
-   * Commit and push the changes to the `dev` branch (`git add . && git commit -m "bug fix" && git push`)
+   * [OPTIONAL] Test locally, if you have time and disk space (a few GBs are needed)
+   * Commit and push the changes to the `dev` branch (`git add . && git commit -m "bug fix" && git push origin dev`)
    * Test remotely with [river-flood-pipeline-dev](https://portal.azure.com/#@rodekruis.onmicrosoft.com/resource/subscriptions/57b0d17a-5429-4dbb-8366-35c928e3ed94/resourceGroups/IBF-system/providers/Microsoft.Logic/workflows/river-flood-pipeline-dev/logicApp), which will upload the output to [ibf-test](https://ibf-test.510.global/); 
-just make a POST request[^1] to the logic app with e.g. payload `country`: `KEN`..
+just make a POST request to the Logic App with the necessary payload[^1]. Example in Python:
+```python
+import requests
+url = "https://prod-79.westeurope.logic.azure.com:443/workflows/..."
+response = requests.request("POST", url, json={"country": "KEN"})
+```
 3. Deploy to `prod`:
-   * make a Pull Request (PR) from `dev` to `main` and inform IBF team that it needs to be merged
+   * Open a pull request (PR) from `dev` to `main` and inform IBF team that it needs to be merged
+   * Wait for the PR to be merged and the code deployed
 4. Re-submit the failed run of [river-flood-pipeline-prod](https://portal.azure.com/#@rodekruis.onmicrosoft.com/resource/subscriptions/57b0d17a-5429-4dbb-8366-35c928e3ed94/resourceGroups/IBF-system/providers/Microsoft.Logic/workflows/river-flood-pipeline-prod/logicApp) or wait for it to run again the next day.
 
 
