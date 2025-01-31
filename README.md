@@ -103,6 +103,8 @@ response = requests.request("POST", url, json={"country": "KEN"})
 ### How do I set up the pipeline for a new country?
 
 1. Check that the administrative boundaries are in the IBF system; if not, ask IBF developers to add them
+2. Check that the GloFAS stations are in the IBF system; if not, ask IBF developers to add them
+3. Check that the coordinates of the GloFAS stations are correct, i.e. that all stations intersect a river; if not, manually correct them
 2. Add country-specific configuration in `config/config.yaml`
 3. Create historical flood extent maps
 ```
