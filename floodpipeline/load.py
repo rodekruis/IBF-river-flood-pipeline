@@ -581,21 +581,13 @@ class Load:
             }
             self.ibf_api_post_request("point-data/dynamic", body=body)
 
-        # close events: event/close-events
+        # process events: events/process
         body = {
             "countryCodeISO3": country,
             "disasterType": "floods",
             "date": upload_time,
         }
-        self.ibf_api_post_request("event/close-events", body=body)
-
-        # send notification
-        body = {
-            "countryCodeISO3": country,
-            "disasterType": "floods",
-            "date": upload_time,
-        }
-        self.ibf_api_post_request("notification/send", body=body)
+        self.ibf_api_post_request("events/process", body=body)
 
     def save_pipeline_data(
         self, data_type: str, dataset: AdminDataSet, replace_country: bool = False
