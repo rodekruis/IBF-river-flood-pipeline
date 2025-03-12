@@ -464,8 +464,8 @@ class Load:
                         self.ibf_api_post_request("point-data/dynamic", body=body)
                     processed_stations.append(station_code)
 
-            # send trigger per lead time: event/triggers-per-leadtime
-            triggers_per_lead_time = []
+            # send alerts per lead time: event/alerts-per-lead-time
+            alerts_per_lead_time = []
             for lead_time in range(0, 8):
                 is_trigger, is_trigger_or_alert = False, False
                 for lead_time_event, event_type in events.items():
@@ -475,21 +475,21 @@ class Load:
                         event_type == "trigger" or event_type == "alert"
                     ) and lead_time >= lead_time_event:
                         is_trigger_or_alert = True
-                triggers_per_lead_time.append(
+                alerts_per_lead_time.append(
                     {
                         "leadTime": f"{lead_time}-day",
-                        "triggered": is_trigger_or_alert,
-                        "thresholdReached": is_trigger,
+                        "forecastAlert": is_trigger_or_alert,
+                        "forecastTrigger": is_trigger,
                     }
                 )
             body = {
                 "countryCodeISO3": country,
-                "triggersPerLeadTime": triggers_per_lead_time,
+                "alertsPerLeadTime": alerts_per_lead_time,
                 "disasterType": "floods",
                 "eventName": event_name,
                 "date": upload_time,
             }
-            self.ibf_api_post_request("event/triggers-per-leadtime", body=body)
+            self.ibf_api_post_request("event/alerts-per-lead-time", body=body)
 
         # END OF EVENT LOOP
         ###############################################################################################################
