@@ -87,8 +87,8 @@ def get_data_unit_id(data_unit: AdminDataUnit, dataset: AdminDataSet):
     return id_
 
 
-def alert_class_to_threshold(alert_class: str, triggered: bool) -> float:
-    """Convert alert class to 'alert_threshold'"""
+def alert_class_to_severity(alert_class: str, triggered: bool) -> float:
+    """Convert alert class to 'forecast_severity'"""
     if alert_class == "no":
         return 0.0
     elif alert_class == "min":
@@ -370,7 +370,8 @@ class Load:
                 indicators = [
                     "population_affected",
                     "population_affected_percentage",
-                    "alert_threshold",
+                    "forecast_severity",
+                    "forecast_trigger",
                 ]
                 for indicator in indicators:
                     for adm_level in forecast_station.pcodes.keys():
@@ -384,13 +385,25 @@ class Load:
                                 amount = forecast_admin.pop_affected
                             elif indicator == "population_affected_percentage":
                                 amount = forecast_admin.pop_affected_perc
-                            elif indicator == "alert_threshold":
-                                amount = alert_class_to_threshold(
+                            elif indicator == "forecast_severity":
+                                amount = alert_class_to_severity(
                                     alert_class=forecast_admin.alert_class,
                                     triggered=(
                                         True if event_type == "trigger" else False
                                     ),
                                 )
+                            elif indicator == "forecast_trigger":
+                                forecast_severity = alert_class_to_severity(
+                                    alert_class=forecast_admin.alert_class,
+                                    triggered=(
+                                        True if event_type == "trigger" else False
+                                    ),
+                                )
+                                # Currently (with high-warning not facilitated yet): set forecast_trigger to 1 exactly for those case where forecast_severity is 1
+                                if event_type == "trigger" and forecast_severity == 1.0:
+                                    amount = 1
+                                else:
+                                    amount = 0
                             exposure_pcodes.append(
                                 {"placeCode": pcode, "amount": amount}
                             )
@@ -451,8 +464,8 @@ class Load:
                         self.ibf_api_post_request("point-data/dynamic", body=body)
                     processed_stations.append(station_code)
 
-            # send trigger per lead time: event/triggers-per-leadtime
-            triggers_per_lead_time = []
+            # send alerts per lead time: event/alerts-per-lead-time
+            alerts_per_lead_time = []
             for lead_time in range(0, 8):
                 is_trigger, is_trigger_or_alert = False, False
                 for lead_time_event, event_type in events.items():
@@ -462,21 +475,21 @@ class Load:
                         event_type == "trigger" or event_type == "alert"
                     ) and lead_time >= lead_time_event:
                         is_trigger_or_alert = True
-                triggers_per_lead_time.append(
+                alerts_per_lead_time.append(
                     {
                         "leadTime": f"{lead_time}-day",
-                        "triggered": is_trigger_or_alert,
-                        "thresholdReached": is_trigger,
+                        "forecastAlert": is_trigger_or_alert,
+                        "forecastTrigger": is_trigger,
                     }
                 )
             body = {
                 "countryCodeISO3": country,
-                "triggersPerLeadTime": triggers_per_lead_time,
+                "alertsPerLeadTime": alerts_per_lead_time,
                 "disasterType": "floods",
                 "eventName": event_name,
                 "date": upload_time,
             }
-            self.ibf_api_post_request("event/triggers-per-leadtime", body=body)
+            self.ibf_api_post_request("event/alerts-per-lead-time", body=body)
 
         # END OF EVENT LOOP
         ###############################################################################################################
@@ -507,7 +520,8 @@ class Load:
             indicators = [
                 "population_affected",
                 "population_affected_percentage",
-                "alert_threshold",
+                "forecast_severity",
+                "forecast_trigger",
             ]
             for indicator in indicators:
                 for adm_level in forecast_data.adm_levels:
@@ -519,7 +533,9 @@ class Load:
                                 amount = 0
                             elif indicator == "population_affected_percentage":
                                 amount = 0.0
-                            elif indicator == "alert_threshold":
+                            elif indicator == "forecast_severity":
+                                amount = 0.0
+                            elif indicator == "forecast_trigger":
                                 amount = 0.0
                             exposure_pcodes.append(
                                 {"placeCode": pcode, "amount": amount}
@@ -581,21 +597,13 @@ class Load:
             }
             self.ibf_api_post_request("point-data/dynamic", body=body)
 
-        # close events: event/close-events
+        # process events: events/process
         body = {
             "countryCodeISO3": country,
             "disasterType": "floods",
             "date": upload_time,
         }
-        self.ibf_api_post_request("event/close-events", body=body)
-
-        # send notification
-        body = {
-            "countryCodeISO3": country,
-            "disasterType": "floods",
-            "date": upload_time,
-        }
-        self.ibf_api_post_request("notification/send", body=body)
+        self.ibf_api_post_request("events/process", body=body)
 
     def save_pipeline_data(
         self, data_type: str, dataset: AdminDataSet, replace_country: bool = False
