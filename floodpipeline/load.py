@@ -843,7 +843,7 @@ class Load:
 
         with open(local_path, "wb") as download_file:
             try:
-                download_file.write(blob_client.download_blob().readall())
+                download_file.write(blob_client.download_blob(timeout=120).readall())
             except ResourceNotFoundError:
                 raise FileNotFoundError(
                     f"File {blob_path} not found in Azure Blob Storage"
