@@ -459,6 +459,7 @@ class Load:
                             "dynamicPointData": station_forecasts[indicator],
                             "pointDataCategory": "glofas_stations",
                             "disasterType": "floods",
+                            "countryCodeISO3": country,
                             "date": upload_time,
                         }
                         self.ibf_api_post_request("point-data/dynamic", body=body)
@@ -593,6 +594,7 @@ class Load:
                 "dynamicPointData": station_forecasts[indicator],
                 "pointDataCategory": "glofas_stations",
                 "disasterType": "floods",
+                "countryCodeISO3": country,
                 "date": upload_time,
             }
             self.ibf_api_post_request("point-data/dynamic", body=body)
