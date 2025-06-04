@@ -155,40 +155,21 @@ class Load:
             file.write(r.content)
 
     def get_adm_boundaries(self, country: str, adm_level: int) -> gpd.GeoDataFrame:
-        """Get administrative boundaries from IBF API"""
+        """Get admin areas from IBF API"""
         try:
-            with urllib.request.urlopen(
-                f"https://raw.githubusercontent.com/rodekruis/IBF-system/master/services/API-service/src/scripts/git-lfs/admin-boundaries/{country}_adm{adm_level}.json"
-            ) as url:
-                data = json.load(url)
-                for ix, record in enumerate(data["features"]):
-                    data["features"][ix]["geometry"]["type"] = "MultiPolygon"
-                gdf = gpd.GeoDataFrame.from_features(data)
-                gdf.columns = map(str.lower, gdf.columns)
-                gdf.set_crs(epsg=4326, inplace=True)
+            adm_boundaries = self.ibf_api_get_request(
+                f"admin-areas/{country}/{adm_level}",
+            )
+            gdf_adm_boundaries = gpd.GeoDataFrame.from_features(
+                adm_boundaries["features"]
+            )
+            gdf_adm_boundaries.set_crs(epsg=4326, inplace=True)
         except HTTPError:
             raise FileNotFoundError(
-                f"Administrative boundaries for country {country} "
-                f"and admin level {adm_level} not found"
+                f"Admin areas for country {country}"
+                f" and admin level {adm_level} not found"
             )
-        # """Get administrative boundaries from PostgreSQL database"""
-        # engine = create_engine(
-        #     f"postgresql://{self.secrets.get_secret('SQL_USER')}:"
-        #     f"{self.secrets.get_secret('SQL_PASSWORD')}"
-        #     f"@{self.settings.get_setting('postgresql_server')}:"
-        #     f"{self.settings.get_setting('postgresql_port')}/"
-        #     f"{self.settings.get_setting('postgresql_database')}"
-        # )
-        # gdf = gpd.GeoDataFrame()
-        # try:
-        #     sql = f"SELECT geometry, adm{adm_level}_pcode FROM admin_boundaries_pcoded.{country.lower()}_adm{adm_level}"
-        #     gdf = gpd.GeoDataFrame.from_postgis(sql, engine, geom_col="geometry")
-        # except ProgrammingError:
-        #     logging.warning(
-        #         f"WARNING: no administrative boundaries found for country {country} "
-        #         f"and adm_level {adm_level}"
-        #     )
-        return gdf
+        return gdf_adm_boundaries
 
     def __ibf_api_authenticate(self):
         no_attempts, attempt, login_response = 5, 0, None
@@ -459,6 +440,7 @@ class Load:
                             "dynamicPointData": station_forecasts[indicator],
                             "pointDataCategory": "glofas_stations",
                             "disasterType": "floods",
+                            "countryCodeISO3": country,
                             "date": upload_time,
                         }
                         self.ibf_api_post_request("point-data/dynamic", body=body)
@@ -593,6 +575,7 @@ class Load:
                 "dynamicPointData": station_forecasts[indicator],
                 "pointDataCategory": "glofas_stations",
                 "disasterType": "floods",
+                "countryCodeISO3": country,
                 "date": upload_time,
             }
             self.ibf_api_post_request("point-data/dynamic", body=body)
@@ -841,7 +824,7 @@ class Load:
 
         with open(local_path, "wb") as download_file:
             try:
-                download_file.write(blob_client.download_blob().readall())
+                download_file.write(blob_client.download_blob(timeout=120).readall())
             except ResourceNotFoundError:
                 raise FileNotFoundError(
                     f"File {blob_path} not found in Azure Blob Storage"
