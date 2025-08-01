@@ -5,15 +5,8 @@ from floodpipeline.load import Load
 from floodpipeline.secrets import Secrets
 from floodpipeline.settings import Settings
 from floodpipeline.data import PipelineDataSets
+from floodpipeline.logger import logger
 from datetime import datetime, date, timedelta
-import logging
-
-logger = logging.getLogger()
-logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
-logging.getLogger("requests").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("azure").setLevel(logging.WARNING)
-logging.getLogger("requests_oauthlib").setLevel(logging.WARNING)
 
 
 class Pipeline:
@@ -57,14 +50,14 @@ class Pipeline:
         """Run the flood data pipeline"""
 
         if prepare:
-            logging.info("prepare discharge data")
+            logger.info("prepare discharge data")
             self.extract.prepare_glofas_data(country=self.country, debug=debug)
 
         if extract:
-            logging.info(f"extract discharge data")
+            logger.info(f"extract discharge data")
             self.extract.extract_glofas_data(country=self.country, debug=debug)
             if save:
-                logging.info("save discharge data to storage")
+                logger.info("save discharge data to storage")
                 self.load.save_pipeline_data(
                     data_type="discharge", dataset=self.data.discharge_admin
                 )
@@ -72,7 +65,7 @@ class Pipeline:
                     data_type="discharge-station", dataset=self.data.discharge_station
                 )
         else:
-            logging.info(f"get discharge data from storage")
+            logger.info(f"get discharge data from storage")
             self.data.discharge_admin = self.load.get_pipeline_data(
                 data_type="discharge",
                 country=self.country,
@@ -87,10 +80,10 @@ class Pipeline:
             )
 
         if forecast:
-            logging.info("forecast floods")
+            logger.info("forecast floods")
             self.forecast.compute_forecast()
             if save:
-                logging.info("save flood forecasts to storage")
+                logger.info("save flood forecasts to storage")
                 self.load.save_pipeline_data(
                     data_type="forecast", dataset=self.data.forecast_admin
                 )
@@ -100,7 +93,7 @@ class Pipeline:
 
         if send:
             if not forecast:
-                logging.info("get flood forecasts from storage")
+                logger.info("get flood forecasts from storage")
                 self.data.forecast_admin = self.load.get_pipeline_data(
                     data_type="forecast",
                     country=self.country,
@@ -113,7 +106,7 @@ class Pipeline:
                     start_date=datetimestart,
                     end_date=datetimeend,
                 )
-            logging.info("send data to IBF API")
+            logger.info("send data to IBF API")
             self.load.send_to_ibf_api(
                 forecast_data=self.data.forecast_admin,
                 discharge_data=self.data.discharge_admin,

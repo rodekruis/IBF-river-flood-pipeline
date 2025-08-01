@@ -7,7 +7,7 @@ from floodpipeline.data import (
     ForecastStationDataUnit,
 )
 from floodpipeline.load import Load
-from datetime import datetime
+from floodpipeline.logger import logger
 from typing import List
 from shapely import Polygon
 from shapely.geometry import shape
@@ -280,11 +280,17 @@ class Forecast:
                 self.input_data_path + f"/flood_map_{country.upper()}_RP{rp}.tif"
             )
             if not os.path.exists(flood_raster_filepath):
-                self.load.get_from_blob(
-                    flood_raster_filepath,
-                    f"{self.settings.get_setting('blob_storage_path')}"
-                    f"/flood-maps/{country.upper()}/flood_map_{country.upper()}_RP{rp}.tif",
-                )
+                try:
+                    self.load.get_from_blob(
+                        flood_raster_filepath,
+                        f"{self.settings.get_setting('blob_storage_path')}"
+                        f"/flood-maps/{country.upper()}/flood_map_{country.upper()}_RP{rp}.tif",
+                    )
+                except FileNotFoundError:
+                    logger.warning(
+                        f"Flood map for {country} with RP {rp} not found, skipping exposure calculation."
+                    )
+                    return None
             flood_rasters[rp] = flood_raster_filepath
 
         # create empty raster
