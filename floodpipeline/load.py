@@ -789,7 +789,7 @@ class Load:
                     )
                     datasets.append(dataset)
         if len(datasets) == 0:
-            raise KeyError(
+            raise FileNotFoundError(
                 f"No datasets of type '{data_type}' found for country {country} in date range "
                 f"{start_date} - {end_date}."
             )
