@@ -1,3 +1,5 @@
+import logging
+
 from floodpipeline.pipeline import Pipeline
 from floodpipeline.secrets import Secrets
 from floodpipeline.settings import Settings
@@ -33,11 +35,16 @@ def run_river_flood_pipeline(
 ):
     datetimestart = datetime.strptime(datetimestart, "%Y-%m-%dT%H:%M:%S")
     datetimeend = datetime.strptime(datetimeend, "%Y-%m-%dT%H:%M:%S")
-    pipe = Pipeline(
-        country=country,
-        settings=Settings("config/config.yaml"),
-        secrets=Secrets(".env"),
-    )
+    try:
+        pipe = Pipeline(
+            country=country,
+            settings=Settings("config/config.yaml"),
+            secrets=Secrets(".env"),
+        )
+    except FileNotFoundError as e:
+        logging.warning(f"Necessary dataset missing: {e}, skipping country {country}")
+        return
+
     pipe.run_pipeline(
         prepare=prepare,
         extract=extract,

@@ -143,9 +143,15 @@ class Extract:
 
         discharges = {}
         for adm_level in self.data.discharge_admin.adm_levels:
-            country_gdf = self.load.get_adm_boundaries(
-                country=country, adm_level=adm_level
-            )
+            try:
+                country_gdf = self.load.get_adm_boundaries(
+                    country=country, adm_level=adm_level
+                )
+            except AttributeError:
+                logging.error(
+                    f"Country {country} does not have admin level {adm_level}, skipping"
+                )
+                continue
             for ensemble in range(0, no_ens):
                 filename = os.path.join(
                     self.inputPathGrid,
@@ -255,6 +261,14 @@ class Extract:
             date = (datetime.today() - timedelta(days=1)).strftime("%Y%m%d")
 
         for ensemble in range(0, no_ens):
+
+            filename_local_sliced = os.path.join(
+                self.inputPathGrid,
+                f"GloFAS_{date}_{country}_{ensemble}.nc",
+            )
+            if os.path.exists(filename_local_sliced):
+                continue
+
             # Download netcdf file
             logging.info(f"downloading GloFAS data for ensemble {ensemble}")
             filename_local = os.path.join(self.inputPathGrid, f"GloFAS_{ensemble}.nc")
@@ -293,10 +307,6 @@ class Extract:
             # Slice netcdf file to country boundaries
             country_bounds = country_gdf.total_bounds
             nc_file_sliced = slice_netcdf_file(nc_file, country_bounds)
-            filename_local_sliced = os.path.join(
-                self.inputPathGrid,
-                f"GloFAS_{date}_{country}_{ensemble}.nc",
-            )
             nc_file_sliced.to_netcdf(filename_local_sliced)
 
             nc_file.close()
