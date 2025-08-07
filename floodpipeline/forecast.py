@@ -272,7 +272,7 @@ class Forecast:
                     alert_class=alert_class,
                 )
                 self.data.forecast_admin.upsert_data_unit(forecast_data_unit)
-            print(f"NOTE: pcode not found in IBF cosmos: {pcode_not_found}")
+        print(f"NOTE: pcode not found in IBF cosmos: {pcode_not_found}")
 
     def __compute_flood_extent(self):
         """Compute flood extent raster"""
