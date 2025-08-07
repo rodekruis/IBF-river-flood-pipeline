@@ -205,8 +205,13 @@ class Forecast:
             country, "alert-on-minimum-probability"
         )
 
+        pcode_not_found = []
         for pcode in self.data.discharge_admin.get_pcodes():
-            threshold_data_unit = self.data.threshold_admin.get_data_unit(pcode)
+            try:
+                threshold_data_unit = self.data.threshold_admin.get_data_unit(pcode)
+            except (KeyError, ValueError, TypeError):
+                pcode_not_found.append(pcode)
+                continue
             for lead_time in self.data.discharge_admin.get_lead_times():
                 discharge_data_unit = self.data.discharge_admin.get_data_unit(
                     pcode, lead_time
@@ -267,6 +272,7 @@ class Forecast:
                     alert_class=alert_class,
                 )
                 self.data.forecast_admin.upsert_data_unit(forecast_data_unit)
+            print(f"NOTE: pcode not found in IBF cosmos: {pcode_not_found}")
 
     def __compute_flood_extent(self):
         """Compute flood extent raster"""
