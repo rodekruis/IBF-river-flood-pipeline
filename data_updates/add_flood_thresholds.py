@@ -33,7 +33,7 @@ RETURN_PERIODS = [
     500.0,
 ]
 secrets = Secrets()
-settings = Settings("config/config_new.yaml")
+settings = Settings("config/config.yaml")
 load = Load(settings=settings, secrets=secrets)
 
 
@@ -72,81 +72,81 @@ def add_flood_thresholds(country):
         country_name = country_settings["name"]
         ttdus = []
 
-        # # calculate thresholds per admin division
-        # for adm_level in country_settings["admin-levels"]:
-        #     print(f"Calculating thresholds for {country_name}, admin level {adm_level}")
-        #     # country_gdf = load.get_adm_boundaries(
-        #     #     country=country_name, adm_level=int(adm_level)
-        #     # )
-        #     try:
-        #         country_gdf = gpd.read_file(
-        #             f"africa/adm_bnd/{country_name}_adm{adm_level}.json"
-        #         )
-        #     except:
-        #         print(" --> No admin boundaries found for this level, skipping")
-        #         continue
-        #     country_gdf = country_gdf.rename(
-        #         columns={f"ADM{adm_level}_PCODE": f"adm{adm_level}_pcode"}
-        #     )
-        #
-        #     for rp, filename in flood_thresholds_files.items():
-        #         with rasterio.open(filename) as src:
-        #             raster_array = src.read(1)
-        #             transform = src.transform
-        #         # Perform zonal statistics
-        #         stats = zonal_stats(
-        #             country_gdf,
-        #             raster_array,
-        #             affine=transform,
-        #             stats=["max", "median"],
-        #             all_touched=True,
-        #             nodata=0.0,
-        #         )
-        #         df = pd.DataFrame(stats).rename(
-        #             columns={"max": f"max_{rp}", "median": f"median_{rp}"}
-        #         )
-        #         country_gdf = pd.concat([country_gdf, df], axis=1)
-        #     for ix, row in country_gdf.iterrows():
-        #         ttdu = ThresholdDataUnit(
-        #             adm_level=int(adm_level),
-        #             pcode=row[f"adm{adm_level}_pcode"],
-        #             thresholds=[
-        #                 Threshold(
-        #                     return_period=float(rp),
-        #                     threshold_value=(
-        #                         row[f"max_{rp}"]
-        #                         if not pd.isna(row[f"max_{rp}"])
-        #                         else 1.0e6
-        #                     ),
-        #                 )
-        #                 for rp in RETURN_PERIODS
-        #             ],
-        #         )
-        #         ttdus.append(ttdu)
-        #
-        # # save admin division thresholds to cosmos
-        # threshold_data = AdminDataSet(
-        #     country=country_name,
-        #     timestamp=datetime.today(),
-        #     adm_levels=country_settings["admin-levels"],
-        #     data_units=ttdus,
-        # )
-        # load.save_pipeline_data("threshold", threshold_data, replace_country=True)
+        # calculate thresholds per admin division
+        for adm_level in country_settings["admin-levels"]:
+            print(f"Calculating thresholds for {country_name}, admin level {adm_level}")
+            country_gdf = load.get_adm_boundaries(
+                country=country_name, adm_level=int(adm_level)
+            )
+            # try:
+            #     country_gdf = gpd.read_file(
+            #         f"africa/adm_bnd/{country_name}_adm{adm_level}.json"
+            #     )
+            # except:
+            #     print(" --> No admin boundaries found for this level, skipping")
+            #     continue
+            # country_gdf = country_gdf.rename(
+            #     columns={f"ADM{adm_level}_PCODE": f"adm{adm_level}_pcode"}
+            # )
+
+            for rp, filename in flood_thresholds_files.items():
+                with rasterio.open(filename) as src:
+                    raster_array = src.read(1)
+                    transform = src.transform
+                # Perform zonal statistics
+                stats = zonal_stats(
+                    country_gdf,
+                    raster_array,
+                    affine=transform,
+                    stats=["max", "median"],
+                    all_touched=True,
+                    nodata=0.0,
+                )
+                df = pd.DataFrame(stats).rename(
+                    columns={"max": f"max_{rp}", "median": f"median_{rp}"}
+                )
+                country_gdf = pd.concat([country_gdf, df], axis=1)
+            for ix, row in country_gdf.iterrows():
+                ttdu = ThresholdDataUnit(
+                    adm_level=int(adm_level),
+                    pcode=row[f"adm{adm_level}_pcode"],
+                    thresholds=[
+                        Threshold(
+                            return_period=float(rp),
+                            threshold_value=(
+                                row[f"max_{rp}"]
+                                if not pd.isna(row[f"max_{rp}"])
+                                else 1.0e6
+                            ),
+                        )
+                        for rp in RETURN_PERIODS
+                    ],
+                )
+                ttdus.append(ttdu)
+
+        # save admin division thresholds to cosmos
+        threshold_data = AdminDataSet(
+            country=country_name,
+            timestamp=datetime.today(),
+            adm_levels=country_settings["admin-levels"],
+            data_units=ttdus,
+        )
+        load.save_pipeline_data("threshold", threshold_data, replace_country=True)
 
         print(f"Calculating station thresholds for {country_name}")
         # extract thresholds for GloFAS stations based on their coordinates
-        # stations = load.get_stations(country=country_name)
-        try:
-            stations = (
-                pd.read_csv(
-                    f"africa/glofas_stations/glofas_stations_{country_name}.csv"
-                )
-                .rename(columns={"StationCode": "stationCode"})
-                .to_dict("records")
-            )
-        except:
-            print(" ---> No GloFAS stations found for this country, skipping")
-            continue
+        stations = load.get_stations(country=country_name)
+        # try:
+        #     stations = (
+        #         pd.read_csv(
+        #             f"africa/glofas_stations/glofas_stations_{country_name}.csv"
+        #         )
+        #         .rename(columns={"StationCode": "stationCode"})
+        #         .to_dict("records")
+        #     )
+        # except:
+        #     print(" ---> No GloFAS stations found for this country, skipping")
+        #     continue
 
         threshold_stations = {}
         for rp, filename in flood_thresholds_files.items():
@@ -168,6 +168,7 @@ def add_flood_thresholds(country):
         # if there is an explicit mapping, use that
         district_mapping = f"config/{country_name}_station_district_mapping.csv"
         if os.path.exists(district_mapping):
+            print(f"Found station-pcodes mapping, using it")
             df = pd.read_csv(district_mapping, dtype={"placeCode": str})
             bottom_adm_level = country_settings["admin-levels"][-1]
             for station_code in df["glofasStation"].unique():
@@ -201,11 +202,12 @@ def add_flood_thresholds(country):
                     pcodes_stations[station_code][adm_level] = pcodes
         # otherwise, calculate based on river maps
         else:
-            # country_gdf = load.get_adm_boundaries(
-            #     country=country_name, adm_level=country_settings["admin-levels"][0]
-            # )
-            country_gdf = gpd.read_file(f"africa/adm_bnd/{country_name}_adm1.json")
-            country_gdf = country_gdf.to_crs("EPSG:4326")
+            print(f"No station-pcodes mapping found, estimating from river network")
+            country_gdf = load.get_adm_boundaries(
+                country=country_name, adm_level=country_settings["admin-levels"][0]
+            )
+            # country_gdf = gpd.read_file(f"africa/adm_bnd/{country_name}_adm1.json")
+            # country_gdf = country_gdf.to_crs("EPSG:4326")
 
             # get geodataframe of rivers
             if not os.path.exists(f"data/updates/{country_name}_rivers_dissolved.gpkg"):
