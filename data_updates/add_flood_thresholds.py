@@ -1,7 +1,6 @@
 import requests
 import os
 import urllib.request
-from datetime import datetime
 import pandas as pd
 from bs4 import BeautifulSoup
 import rasterio
@@ -33,8 +32,7 @@ RETURN_PERIODS = [
     500.0,
 ]
 secrets = Secrets()
-settings = Settings("config/config_new.yaml")
-load = Load(settings=settings, secrets=secrets)
+settings = Settings("config/config.yaml")
 
 
 @click.command()
@@ -70,83 +68,55 @@ def add_flood_thresholds(country):
         if country != "all" and country != country_settings["name"]:
             continue
         country_name = country_settings["name"]
-        ttdus = []
+        load = Load(country=country_name, settings=settings, secrets=secrets)
 
-        # # calculate thresholds per admin division
-        # for adm_level in country_settings["admin-levels"]:
-        #     print(f"Calculating thresholds for {country_name}, admin level {adm_level}")
-        #     # country_gdf = load.get_adm_boundaries(
-        #     #     country=country_name, adm_level=int(adm_level)
-        #     # )
-        #     try:
-        #         country_gdf = gpd.read_file(
-        #             f"africa/adm_bnd/{country_name}_adm{adm_level}.json"
-        #         )
-        #     except:
-        #         print(" --> No admin boundaries found for this level, skipping")
-        #         continue
-        #     country_gdf = country_gdf.rename(
-        #         columns={f"ADM{adm_level}_PCODE": f"adm{adm_level}_pcode"}
-        #     )
-        #
-        #     for rp, filename in flood_thresholds_files.items():
-        #         with rasterio.open(filename) as src:
-        #             raster_array = src.read(1)
-        #             transform = src.transform
-        #         # Perform zonal statistics
-        #         stats = zonal_stats(
-        #             country_gdf,
-        #             raster_array,
-        #             affine=transform,
-        #             stats=["max", "median"],
-        #             all_touched=True,
-        #             nodata=0.0,
-        #         )
-        #         df = pd.DataFrame(stats).rename(
-        #             columns={"max": f"max_{rp}", "median": f"median_{rp}"}
-        #         )
-        #         country_gdf = pd.concat([country_gdf, df], axis=1)
-        #     for ix, row in country_gdf.iterrows():
-        #         ttdu = ThresholdDataUnit(
-        #             adm_level=int(adm_level),
-        #             pcode=row[f"adm{adm_level}_pcode"],
-        #             thresholds=[
-        #                 Threshold(
-        #                     return_period=float(rp),
-        #                     threshold_value=(
-        #                         row[f"max_{rp}"]
-        #                         if not pd.isna(row[f"max_{rp}"])
-        #                         else 1.0e6
-        #                     ),
-        #                 )
-        #                 for rp in RETURN_PERIODS
-        #             ],
-        #         )
-        #         ttdus.append(ttdu)
-        #
-        # # save admin division thresholds to cosmos
-        # threshold_data = AdminDataSet(
-        #     country=country_name,
-        #     timestamp=datetime.today(),
-        #     adm_levels=country_settings["admin-levels"],
-        #     data_units=ttdus,
-        # )
-        # load.save_pipeline_data("threshold", threshold_data, replace_country=True)
+        # calculate thresholds per admin division
+        data_units = []
+        for adm_level in country_settings["admin-levels"]:
+            print(f"Calculating thresholds for {country_name}, admin level {adm_level}")
+            country_gdf = load.get_adm_boundaries(adm_level=int(adm_level))
+
+            for rp, filename in flood_thresholds_files.items():
+                with rasterio.open(filename) as src:
+                    raster_array = src.read(1)
+                    transform = src.transform
+                # Perform zonal statistics
+                stats = zonal_stats(
+                    country_gdf,
+                    raster_array,
+                    affine=transform,
+                    stats=["max", "median"],
+                    all_touched=True,
+                    nodata=0.0,
+                )
+                df = pd.DataFrame(stats).rename(
+                    columns={"max": f"max_{rp}", "median": f"median_{rp}"}
+                )
+                country_gdf = pd.concat([country_gdf, df], axis=1)
+            for ix, row in country_gdf.iterrows():
+                ttdu = ThresholdDataUnit(
+                    adm_level=int(adm_level),
+                    pcode=row[f"adm{adm_level}_pcode"],
+                    thresholds=[
+                        Threshold(
+                            return_period=float(rp),
+                            threshold_value=(
+                                row[f"max_{rp}"]
+                                if not pd.isna(row[f"max_{rp}"])
+                                else 1.0e6
+                            ),
+                        )
+                        for rp in RETURN_PERIODS
+                    ],
+                )
+                data_units.append(ttdu)
+
+        # save admin division thresholds
+        load.save_thresholds_admin(data_units)
 
         print(f"Calculating station thresholds for {country_name}")
         # extract thresholds for GloFAS stations based on their coordinates
-        # stations = load.get_stations(country=country_name)
-        try:
-            stations = (
-                pd.read_csv(
-                    f"africa/glofas_stations/glofas_stations_{country_name}.csv"
-                )
-                .rename(columns={"StationCode": "stationCode"})
-                .to_dict("records")
-            )
-        except:
-            print(" ---> No GloFAS stations found for this country, skipping")
-            continue
+        stations = load.get_stations()
 
         threshold_stations = {}
         for rp, filename in flood_thresholds_files.items():
@@ -168,6 +138,7 @@ def add_flood_thresholds(country):
         # if there is an explicit mapping, use that
         district_mapping = f"config/{country_name}_station_district_mapping.csv"
         if os.path.exists(district_mapping):
+            print(f"Found station-pcodes mapping, using it")
             df = pd.read_csv(district_mapping, dtype={"placeCode": str})
             bottom_adm_level = country_settings["admin-levels"][-1]
             for station_code in df["glofasStation"].unique():
@@ -179,9 +150,7 @@ def add_flood_thresholds(country):
                     )
                 }
                 for adm_level in reversed(country_settings["admin-levels"][:-1]):
-                    adm_gdf = load.get_adm_boundaries(
-                        country=country_name, adm_level=adm_level + 1
-                    )
+                    adm_gdf = load.get_adm_boundaries(adm_level=adm_level + 1)
                     pcodes = []
                     for child_pcode in pcodes_stations[station_code][adm_level + 1]:
                         pcodes.append(
@@ -201,11 +170,12 @@ def add_flood_thresholds(country):
                     pcodes_stations[station_code][adm_level] = pcodes
         # otherwise, calculate based on river maps
         else:
-            # country_gdf = load.get_adm_boundaries(
-            #     country=country_name, adm_level=country_settings["admin-levels"][0]
-            # )
-            country_gdf = gpd.read_file(f"africa/adm_bnd/{country_name}_adm1.json")
-            country_gdf = country_gdf.to_crs("EPSG:4326")
+            print(f"No station-pcodes mapping found, estimating from river network")
+            country_gdf = load.get_adm_boundaries(
+                adm_level=country_settings["admin-levels"][0]
+            )
+            # country_gdf = gpd.read_file(f"africa/adm_bnd/{country_name}_adm1.json")
+            # country_gdf = country_gdf.to_crs("EPSG:4326")
 
             # get geodataframe of rivers
             if not os.path.exists(f"data/updates/{country_name}_rivers_dissolved.gpkg"):
@@ -272,21 +242,7 @@ def add_flood_thresholds(country):
             # for each adm level and station, get pcodes of adm divisions intersecting the river(s) passing by the station
             top_adm_level = country_settings["admin-levels"][0]
             for adm_level in country_settings["admin-levels"]:
-                # adm_gdf = load.get_adm_boundaries(
-                #     country=country_name, adm_level=adm_level
-                # )
-                try:
-                    adm_gdf = gpd.read_file(
-                        f"africa/adm_bnd/{country_name}_adm{adm_level}.json"
-                    )
-                except:
-                    continue
-                adm_gdf = adm_gdf.rename(
-                    columns={
-                        f"ADM{adm_level}_PCODE": f"adm{adm_level}_pcode",
-                    }
-                )
-
+                adm_gdf = load.get_adm_boundaries(adm_level=adm_level)
                 adm_gdf = adm_gdf.to_crs(projected_crs)
 
                 for ix, station_river_record in station_river.iterrows():
@@ -298,15 +254,10 @@ def add_flood_thresholds(country):
                         ]
                     else:
                         adm_gdf_station = adm_gdf[
-                            adm_gdf[f"adm{adm_level}_pcode"].str.startswith(
-                                tuple(pcodes_stations[ix][adm_level - 1])
+                            adm_gdf[f"adm{adm_level-1}_pcode"].isin(
+                                pcodes_stations[ix][adm_level - 1]
                             )
                         ]
-                        # adm_gdf_station = adm_gdf[
-                        #     adm_gdf[f"adm{adm_level-1}_pcode"].isin(
-                        #         pcodes_stations[ix][adm_level - 1]
-                        #     )
-                        # ]
                     pcodes = list(
                         set(adm_gdf_station[f"adm{adm_level}_pcode"].to_list())
                     )
@@ -316,10 +267,7 @@ def add_flood_thresholds(country):
                         pcodes_stations[ix][adm_level] = pcodes
 
         # save thresholds
-        threshold_station_data = StationDataSet(
-            country=country_name,
-            timestamp=datetime.today(),
-        )
+        data_units = []
         for station in stations:
             if station["stationCode"] not in pcodes_stations.keys():
                 pcodes = {}
@@ -327,7 +275,7 @@ def add_flood_thresholds(country):
                     pcodes[adm_level] = []
                 pcodes_stations[station["stationCode"]] = pcodes
             for lead_time in range(1, 8):
-                threshold_station_data.upsert_data_unit(
+                data_units.append(
                     ThresholdStationDataUnit(
                         station_code=station["stationCode"],
                         station_name=station["stationName"],
@@ -337,9 +285,7 @@ def add_flood_thresholds(country):
                         thresholds=threshold_stations[station["stationCode"]],
                     )
                 )
-        load.save_pipeline_data(
-            "threshold-station", threshold_station_data, replace_country=True
-        )
+        load.save_thresholds_station(data_units)
 
 
 if __name__ == "__main__":
