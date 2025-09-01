@@ -33,24 +33,21 @@ class Extract:
 
     def __init__(
         self,
+        country: str = None,
         settings: Settings = None,
         secrets: Secrets = None,
         data: PipelineDataSets = None,
     ):
+        self.country = country
         self.source = None
-        self.country = None
-        self.secrets = None
-        self.settings = None
+        self.set_secrets(secrets)
+        self.set_settings(settings)
+        self.load = Load(
+            country=self.country, settings=self.settings, secrets=self.secrets
+        )
         self.inputPathGrid = "./data/input"
-        self.load = Load()
         if not os.path.exists(self.inputPathGrid):
             os.makedirs(self.inputPathGrid)
-        if settings is not None:
-            self.set_settings(settings)
-            self.load.set_settings(settings)
-        if secrets is not None:
-            self.set_secrets(secrets)
-            self.load.set_secrets(secrets)
         self.data = data
 
     def set_settings(self, settings):
@@ -110,7 +107,7 @@ class Extract:
         if country is None:
             country = self.country
         logging.info(f"start preparing GloFAS data for country {country}")
-        country_gdf = self.load.get_adm_boundaries(country=country, adm_level=1)
+        country_gdf = self.load.get_adm_boundaries(adm_level=1)
         no_ens = self.settings.get_setting("no_ensemble_members")
         date = datetime.today().strftime("%Y%m%d")
         if debug:
@@ -205,9 +202,7 @@ class Extract:
         discharges = {}
         for adm_level in self.data.discharge_admin.adm_levels:
             try:
-                country_gdf = self.load.get_adm_boundaries(
-                    country=country, adm_level=adm_level
-                )
+                country_gdf = self.load.get_adm_boundaries(adm_level=adm_level)
             except AttributeError:
                 logging.error(
                     f"Country {country} does not have admin level {adm_level}, skipping"

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os.path
-import copy
 import time
 
 from floodpipeline.secrets import Secrets
@@ -20,9 +19,8 @@ from floodpipeline.data import (
     PipelineDataSets,
 )
 from urllib.error import HTTPError
-import urllib.request, json
-from datetime import datetime, timedelta, date
-import azure.cosmos.cosmos_client as cosmos_client
+import json
+from datetime import datetime
 import logging
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -32,59 +30,6 @@ from typing import List
 import shutil
 from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import ResourceNotFoundError
-
-COSMOS_DATA_TYPES = [
-    "discharge",
-    "forecast",
-    "threshold",
-    "discharge-station",
-    "forecast-station",
-    "threshold-station",
-]
-
-
-def get_cosmos_query(
-    start_date=None,
-    end_date=None,
-    country=None,
-    adm_level=None,
-    pcode=None,
-    lead_time=None,
-):
-    query = "SELECT * FROM c WHERE "
-    if start_date is not None:
-        query += f'c.timestamp >= "{start_date.strftime("%Y-%m-%dT%H:%M:%S")}" '
-    if end_date is not None:
-        query += f'AND c.timestamp <= "{end_date.strftime("%Y-%m-%dT%H:%M:%S")}" '
-    if country is not None:
-        query += f'AND c.country = "{country}" '
-    if adm_level is not None:
-        query += f'AND c.adm_level = "{adm_level}" '
-    if pcode is not None:
-        query += f'AND c.adm_level = "{pcode}" '
-    if lead_time is not None:
-        query += f'AND c.adm_level = "{lead_time}" '
-    if query.endswith("WHERE "):
-        query = query.replace("WHERE ", "")
-    query = query.replace("WHERE AND", "WHERE")
-    return query
-
-
-def get_data_unit_id(data_unit: AdminDataUnit, dataset: AdminDataSet):
-    """Get data unit ID"""
-    if hasattr(data_unit, "pcode"):
-        if hasattr(data_unit, "lead_time"):
-            id_ = f"{data_unit.pcode}_{dataset.timestamp.strftime('%Y-%m-%dT%H:%M:%S')}_{data_unit.lead_time}"
-        else:
-            id_ = f"{data_unit.pcode}_{dataset.timestamp.strftime('%Y-%m-%dT%H:%M:%S')}"
-    elif hasattr(data_unit, "station_code"):
-        if hasattr(data_unit, "lead_time"):
-            id_ = f"{data_unit.station_code}_{dataset.timestamp.strftime('%Y-%m-%dT%H:%M:%S')}_{data_unit.lead_time}"
-        else:
-            id_ = f"{data_unit.station_code}_{dataset.timestamp.strftime('%Y-%m-%dT%H:%M:%S')}"
-    else:
-        id_ = f"{dataset.timestamp.strftime('%Y-%m-%dT%H:%M:%S')}"
-    return id_
 
 
 def alert_class_to_severity(alert_class: str, triggered: bool) -> float:
@@ -107,7 +52,10 @@ def alert_class_to_severity(alert_class: str, triggered: bool) -> float:
 class Load:
     """Download/upload data from/to a data storage"""
 
-    def __init__(self, settings: Settings = None, secrets: Secrets = None):
+    def __init__(
+        self, country: str = None, settings: Settings = None, secrets: Secrets = None
+    ):
+        self.country = country
         self.secrets = None
         self.settings = None
         if settings is not None:
@@ -142,33 +90,31 @@ class Load:
         )
         self.secrets = secrets
 
-    def get_population_density(self, country: str, file_path: str):
+    def get_population_density(self, file_path: str):
         """Get population density data from worldpop and save to file_path"""
         r = requests.get(
-            f"{self.settings.get_setting('worldpop_url')}/{country.upper()}/{country.lower()}_ppp_2022_1km_UNadj_constrained.tif"
+            f"{self.settings.get_setting('worldpop_url')}/{self.country}/{self.country.lower()}_ppp_2022_1km_UNadj_constrained.tif"
         )
         if "404 Not Found" in str(r.content):
             raise FileNotFoundError(
-                f"Population density data not found for country {country}"
+                f"Population density data not found for country {self.country}"
             )
         with open(file_path, "wb") as file:
             file.write(r.content)
 
-    def get_adm_boundaries(self, country: str, adm_level: int) -> gpd.GeoDataFrame:
+    def get_adm_boundaries(self, adm_level: int) -> gpd.GeoDataFrame:
         """Get admin areas from IBF API"""
         try:
             adm_boundaries = self.ibf_api_get_request(
-                f"admin-areas/{country}/{adm_level}",
+                f"admin-areas/{self.country}/{adm_level}",
             )
-            gdf_adm_boundaries = gpd.GeoDataFrame.from_features(
-                adm_boundaries["features"]
-            )
-            gdf_adm_boundaries.set_crs(epsg=4326, inplace=True)
         except HTTPError:
             raise FileNotFoundError(
-                f"Admin areas for country {country}"
+                f"Admin areas for country {self.country}"
                 f" and admin level {adm_level} not found"
             )
+        gdf_adm_boundaries = gpd.GeoDataFrame.from_features(adm_boundaries["features"])
+        gdf_adm_boundaries.set_crs(epsg=4326, inplace=True)
         return gdf_adm_boundaries
 
     def __ibf_api_authenticate(self):
@@ -220,22 +166,6 @@ class Load:
             raise ValueError(
                 f"Error in IBF API POST request: {r.status_code}, {r.text}"
             )
-        if not os.path.exists("logs"):
-            os.makedirs("logs")
-        if body:
-            filename = body["date"]
-            filename = "".join(x for x in filename if x.isalnum())
-            filename = filename + ".json"
-            filename = os.path.join("logs", filename)
-            logs = {"endpoint": path, "payload": body}
-            with open(filename, "a") as file:
-                file.write(str(logs) + "\n")
-        elif files:
-            filename = datetime.today().strftime("%Y%m%d") + ".json"
-            filename = os.path.join("logs", filename)
-            logs = {"endpoint": path, "payload": files}
-            with open(filename, "a") as file:
-                file.write(str(logs) + "\n")
 
     def ibf_api_get_request(self, path, parameters=None):
         token = self.__ibf_api_authenticate()
@@ -257,14 +187,14 @@ class Load:
             raise ValueError(f"Error in IBF API GET request: {r.status_code}, {r.text}")
         return r.json()
 
-    def get_stations(self, country: str) -> list[dict]:
+    def get_stations(self) -> list[dict]:
         """Get GloFAS stations from IBF app"""
         stations = self.ibf_api_get_request(
-            f"point-data/glofas_stations/{country}",
+            f"point-data/glofas_stations/{self.country}",
             parameters={
                 "disasterType": "flood",
                 "pointDataCategory": "glofas_stations",
-                "countryCodeISO3": country,
+                "countryCodeISO3": self.country,
             },
         )
         gdf_stations = gpd.GeoDataFrame.from_features(stations["features"])
@@ -283,7 +213,6 @@ class Load:
     def send_to_ibf_api(
         self,
         forecast_data: AdminDataSet,
-        discharge_data: AdminDataSet,
         forecast_station_data: StationDataSet,
         discharge_station_data: StationDataSet,
         flood_extent: str = None,
@@ -291,16 +220,13 @@ class Load:
     ):
         """Send flood forecast data to IBF API"""
 
-        country = forecast_data.country
         trigger_on_lead_time = self.settings.get_country_setting(
-            country, "trigger-on-lead-time"
+            self.country, "trigger-on-lead-time"
         )
         trigger_on_return_period = self.settings.get_country_setting(
-            country, "trigger-on-return-period"
+            self.country, "trigger-on-return-period"
         )
-        threshold_station_data = self.get_pipeline_data(
-            data_type="threshold-station", country=country
-        )
+        threshold_station_data = self.get_thresholds_station()
 
         processed_stations, processed_pcodes, triggered_lead_times = [], [], []
 
@@ -390,7 +316,7 @@ class Load:
                             )
                             processed_pcodes.append(pcode)
                         body = {
-                            "countryCodeISO3": country,
+                            "countryCodeISO3": self.country,
                             "leadTime": f"{lead_time_event}-day",
                             "dynamicIndicator": indicator,
                             "adminLevel": int(adm_level),
@@ -440,7 +366,7 @@ class Load:
                             "dynamicPointData": station_forecasts[indicator],
                             "pointDataCategory": "glofas_stations",
                             "disasterType": "floods",
-                            "countryCodeISO3": country,
+                            "countryCodeISO3": self.country,
                             "date": upload_time,
                         }
                         self.ibf_api_post_request("point-data/dynamic", body=body)
@@ -465,7 +391,7 @@ class Load:
                     }
                 )
             body = {
-                "countryCodeISO3": country,
+                "countryCodeISO3": self.country,
                 "alertsPerLeadTime": alerts_per_lead_time,
                 "disasterType": "floods",
                 "eventName": event_name,
@@ -480,7 +406,7 @@ class Load:
         self.rasters_sent = []
         for lead_time in range(0, 8):
             flood_extent_new = flood_extent.replace(
-                ".tif", f"_{lead_time}-day_{country}.tif"
+                ".tif", f"_{lead_time}-day_{self.country}.tif"
             )
             if lead_time in triggered_lead_times:
                 shutil.copy(
@@ -523,7 +449,7 @@ class Load:
                                 {"placeCode": pcode, "amount": amount}
                             )
                     body = {
-                        "countryCodeISO3": country,
+                        "countryCodeISO3": self.country,
                         "leadTime": "1-day",  # this is a specific check IBF uses to establish no-trigger
                         "dynamicIndicator": indicator,
                         "adminLevel": adm_level,
@@ -575,230 +501,80 @@ class Load:
                 "dynamicPointData": station_forecasts[indicator],
                 "pointDataCategory": "glofas_stations",
                 "disasterType": "floods",
-                "countryCodeISO3": country,
+                "countryCodeISO3": self.country,
                 "date": upload_time,
             }
             self.ibf_api_post_request("point-data/dynamic", body=body)
 
         # process events: events/process
         body = {
-            "countryCodeISO3": country,
+            "countryCodeISO3": self.country,
             "disasterType": "floods",
             "date": upload_time,
         }
         self.ibf_api_post_request("events/process", body=body)
 
-    def save_pipeline_data(
-        self, data_type: str, dataset: AdminDataSet, replace_country: bool = False
-    ):
-        """Upload pipeline datasets to Cosmos DB"""
-        if data_type not in COSMOS_DATA_TYPES:
-            raise ValueError(
-                f"Data type {data_type} is not supported."
-                f"Supported storages are {', '.join(COSMOS_DATA_TYPES)}"
-            )
-        # check data types
-        if data_type == "discharge":
-            for data_unit in dataset.data_units:
-                if not isinstance(data_unit, DischargeDataUnit):
-                    raise ValueError(
-                        f"Data unit {data_unit} is not of type DischargeDataUnit"
-                    )
-        elif data_type == "forecast":
-            for data_unit in dataset.data_units:
-                if not isinstance(data_unit, ForecastDataUnit):
-                    raise ValueError(
-                        f"Data unit {data_unit} is not of type ForecastDataUnit"
-                    )
-        elif data_type == "threshold":
-            for data_unit in dataset.data_units:
-                if not isinstance(data_unit, ThresholdDataUnit):
-                    raise ValueError(
-                        f"Data unit {data_unit} is not of type ThresholdDataUnit"
-                    )
-        elif data_type == "discharge-station":
-            for data_unit in dataset.data_units:
-                if not isinstance(data_unit, DischargeStationDataUnit):
-                    raise ValueError(
-                        f"Data unit {data_unit} is not of type DischargeStationDataUnit"
-                    )
-        elif data_type == "forecast-station":
-            for data_unit in dataset.data_units:
-                if not isinstance(data_unit, ForecastStationDataUnit):
-                    raise ValueError(
-                        f"Data unit {data_unit} is not of type ForecastStationDataUnit"
-                    )
-        elif data_type == "threshold-station":
-            for data_unit in dataset.data_units:
-                if not isinstance(data_unit, ThresholdStationDataUnit):
-                    raise ValueError(
-                        f"Data unit {data_unit} is not of type ThresholdStationDataUnit"
-                    )
-
-        client_ = cosmos_client.CosmosClient(
-            self.secrets.get_secret("COSMOS_URL"),
-            {"masterKey": self.secrets.get_secret("COSMOS_KEY")},
-            user_agent="sml-api",
-            user_agent_overwrite=True,
-        )
-        cosmos_db = client_.get_database_client("flood-pipeline")
-        cosmos_container_client = cosmos_db.get_container_client(data_type)
-        if replace_country:
-            query = get_cosmos_query(country=dataset.country)
-            old_records = cosmos_container_client.query_items(query)
-            for old_record in old_records:
-                cosmos_container_client.delete_item(
-                    item=old_record.get("id"), partition_key=dataset.country
-                )
-        for data_unit in dataset.data_units:
-            record = vars(data_unit)
-            record["timestamp"] = dataset.timestamp.strftime("%Y-%m-%dT%H:%M:%S")
-            record["country"] = dataset.country
-            record["id"] = get_data_unit_id(data_unit, dataset)
-            cosmos_container_client.upsert_item(body=record)
-
-    def get_pipeline_data(
-        self,
-        data_type,
-        country,
-        start_date=None,
-        end_date=None,
-        adm_level=None,
-        pcode=None,
-        lead_time=None,
-    ) -> AdminDataSet:
-        """Download pipeline datasets from Cosmos DB"""
-        if data_type not in COSMOS_DATA_TYPES:
-            raise ValueError(
-                f"Data type {data_type} is not supported."
-                f"Supported storages are {', '.join(COSMOS_DATA_TYPES)}"
-            )
-        client_ = cosmos_client.CosmosClient(
-            self.secrets.get_secret("COSMOS_URL"),
-            {"masterKey": self.secrets.get_secret("COSMOS_KEY")},
-            user_agent="ibf-flood-pipeline",
-            user_agent_overwrite=True,
-        )
-        cosmos_db = client_.get_database_client("flood-pipeline")
-        cosmos_container_client = cosmos_db.get_container_client(data_type)
-        query = get_cosmos_query(
-            start_date, end_date, country, adm_level, pcode, lead_time
-        )
-        records_query = cosmos_container_client.query_items(
-            query=query,
-            enable_cross_partition_query=(
-                True if country is None else None
-            ),  # country must be the partition key
-        )
-        records = []
-        for record in records_query:
-            records.append(copy.deepcopy(record))
-        datasets = []
-        countries = list(set([record["country"] for record in records]))
-        timestamps = list(set([record["timestamp"] for record in records]))
-        for country in countries:
-            for timestamp in timestamps:
-                data_units = []
-                for record in records:
-                    if (
-                        record["country"] == country
-                        and record["timestamp"] == timestamp
-                    ):
-                        if data_type == "discharge":
-                            data_unit = DischargeDataUnit(
-                                adm_level=record["adm_level"],
-                                pcode=record["pcode"],
-                                lead_time=record["lead_time"],
-                                discharge_mean=record["discharge_mean"],
-                                discharge_ensemble=record["discharge_ensemble"],
-                            )
-                        elif data_type == "forecast":
-                            data_unit = ForecastDataUnit(
-                                adm_level=record["adm_level"],
-                                pcode=record["pcode"],
-                                lead_time=record["lead_time"],
-                                forecasts=record["forecasts"],
-                                pop_affected=record["pop_affected"],
-                                pop_affected_perc=record["pop_affected_perc"],
-                                triggered=record["triggered"],
-                                return_period=record["return_period"],
-                                alert_class=record["alert_class"],
-                            )
-                        elif data_type == "threshold":
-                            data_unit = ThresholdDataUnit(
-                                adm_level=record["adm_level"],
-                                pcode=record["pcode"],
-                                thresholds=record["thresholds"],
-                            )
-                        elif data_type == "discharge-station":
-                            data_unit = DischargeStationDataUnit(
-                                station_code=record["station_code"],
-                                station_name=record["station_name"],
-                                lat=record["lat"],
-                                lon=record["lon"],
-                                pcodes=record["pcodes"],
-                                lead_time=record["lead_time"],
-                                discharge_mean=record["discharge_mean"],
-                                discharge_ensemble=record["discharge_ensemble"],
-                            )
-                        elif data_type == "forecast-station":
-                            data_unit = ForecastStationDataUnit(
-                                station_code=record["station_code"],
-                                station_name=record["station_name"],
-                                lat=record["lat"],
-                                lon=record["lon"],
-                                pcodes=record["pcodes"],
-                                lead_time=record["lead_time"],
-                                forecasts=record["forecasts"],
-                                triggered=record["triggered"],
-                                return_period=record["return_period"],
-                                alert_class=record["alert_class"],
-                            )
-                        elif data_type == "threshold-station":
-                            data_unit = ThresholdStationDataUnit(
-                                station_code=record["station_code"],
-                                station_name=record["station_name"],
-                                lat=record["lat"],
-                                lon=record["lon"],
-                                pcodes=record["pcodes"],
-                                thresholds=record["thresholds"],
-                            )
-                        else:
-                            raise ValueError(f"Invalid data type {data_type}")
-                        data_units.append(data_unit)
-                if (
-                    data_type == "discharge"
-                    or data_type == "forecast"
-                    or data_type == "threshold"
-                ):
-                    adm_levels = list(
-                        set([data_unit.adm_level for data_unit in data_units])
-                    )
-                    dataset = AdminDataSet(
-                        country=country,
-                        timestamp=timestamp,
-                        adm_levels=adm_levels,
-                        data_units=data_units,
-                    )
-                    datasets.append(dataset)
-                else:
-                    dataset = StationDataSet(
-                        country=country,
-                        timestamp=timestamp,
-                        data_units=data_units,
-                    )
-                    datasets.append(dataset)
-        if len(datasets) == 0:
+    def get_thresholds_station(self):
+        """Get GloFAS station thresholds from config file"""
+        data_units = []
+        if not os.path.exists(rf"config/{self.country}_station_thresholds.json"):
             raise FileNotFoundError(
-                f"No datasets of type '{data_type}' found for country {country} in date range "
-                f"{start_date} - {end_date}."
+                f"No station thresholds config file found for country {self.country}"
             )
-        elif len(datasets) > 1:
-            logging.warning(
-                f"Multiple datasets of type '{data_type}' found for country {country} in date range "
-                f"{start_date} - {end_date}; returning the latest (timestamp {datasets[-1].timestamp}). "
+        with open(rf"config/{self.country}_station_thresholds.json", "r") as read_file:
+            station_thresholds = json.load(read_file)
+            for station in station_thresholds:
+                data_units.append(
+                    ThresholdStationDataUnit(
+                        station_code=station["station_code"],
+                        station_name=station["station_name"],
+                        lat=station["lat"],
+                        lon=station["lon"],
+                        pcodes=station["pcodes"],
+                        thresholds=station["thresholds"],
+                    )
+                )
+        dataset = StationDataSet(
+            country=self.country,
+            data_units=data_units,
+        )
+        return dataset
+
+    def save_thresholds_station(self, data: List[ThresholdStationDataUnit]):
+        """Save GloFAS station thresholds to config file"""
+        # TBI validate before save
+        with open(rf"config/{self.country}_station_thresholds.json", "w") as file:
+            json.dump([record.__dict__ for record in data], file)
+
+    def get_thresholds_admin(self):
+        """Get GloFAS admin area thresholds from config file"""
+        data_units = []
+        if not os.path.exists(rf"config/{self.country}_admin_thresholds.json"):
+            raise FileNotFoundError(
+                f"No admin thresholds config file found for country {self.country}"
             )
-        return datasets[-1]
+        with open(rf"config/{self.country}_admin_thresholds.json", "r") as read_file:
+            admin_thresholds = json.load(read_file)
+            for record in admin_thresholds:
+                data_units.append(
+                    ThresholdDataUnit(
+                        adm_level=record["adm_level"],
+                        pcode=record["pcode"],
+                        thresholds=record["thresholds"],
+                    )
+                )
+        dataset = AdminDataSet(
+            country=self.country,
+            timestamp=datetime.now(),
+            data_units=data_units,
+        )
+        return dataset
+
+    def save_thresholds_admin(self, data: List[ThresholdDataUnit]):
+        """Save GloFAS admin area thresholds to config file"""
+        # TBI validate before save
+        with open(rf"config/{self.country}_admin_thresholds.json", "w") as file:
+            json.dump([record.__dict__ for record in data], file)
 
     def __get_blob_service_client(self, blob_path: str):
         """Get service client for Azure Blob Storage"""

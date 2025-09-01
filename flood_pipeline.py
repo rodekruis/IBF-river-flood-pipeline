@@ -18,6 +18,7 @@ import click
     is_flag=True,
 )
 def run_river_flood_pipeline(country, prepare, forecast, send, debug):
+    country = country.upper()
     try:
         pipe = Pipeline(
             country=country,
