@@ -177,13 +177,16 @@ class Load:
         no_attempts, attempt, login_response = 5, 0, None
         while attempt < no_attempts:
             try:
+                login_url = self.secrets.get_secret("IBF_API_URL") + "user/login"
+                logger.info(f"POST {login_url}")
                 login_response = requests.post(
-                    self.secrets.get_secret("IBF_API_URL") + "user/login",
+                    login_url,
                     data=[
                         ("email", self.secrets.get_secret("IBF_API_USER")),
                         ("password", self.secrets.get_secret("IBF_API_PASSWORD")),
                     ],
                 )
+                logger.info(f"POST {login_url} {login_response.status_code}")
                 break
             except requests.exceptions.ConnectionError:
                 attempt += 1
