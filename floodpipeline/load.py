@@ -29,6 +29,8 @@ import shutil
 from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import ResourceNotFoundError
 
+logger = logging.getLogger()
+
 COSMOS_DATA_TYPES = [
     "discharge",
     "forecast",
@@ -212,12 +214,15 @@ class Load:
         adapter = HTTPAdapter(max_retries=retry)
         session.mount("http://", adapter)
         session.mount("https://", adapter)
+        url = self.secrets.get_secret("IBF_API_URL") + path
+        logger.info(f"POST {url}")
         r = session.post(
-            self.secrets.get_secret("IBF_API_URL") + path,
+            url,
             json=body,
             files=files,
             headers=headers,
         )
+        logger.info(f"POST {url} {r.status_code}")
         if r.status_code >= 400:
             raise ValueError(
                 f"Error in IBF API POST request: {r.status_code}, {r.text}"
@@ -250,11 +255,14 @@ class Load:
         adapter = HTTPAdapter(max_retries=retry)
         session.mount("http://", adapter)
         session.mount("https://", adapter)
+        url = self.secrets.get_secret("IBF_API_URL") + path
+        logger.info(f"GET {url}")
         r = session.get(
-            self.secrets.get_secret("IBF_API_URL") + path,
+            url,
             headers=headers,
             params=parameters,
         )
+        logger.info(f"GET {url} {r.status_code}")
         if r.status_code >= 400:
             raise ValueError(f"Error in IBF API GET request: {r.status_code}, {r.text}")
         return r.json()
