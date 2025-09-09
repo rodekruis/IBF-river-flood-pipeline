@@ -33,14 +33,10 @@ class Pipeline:
             data_type="threshold-station", country=self.country
         )
         self.extract = Extract(
-            settings=settings,
-            secrets=secrets,
-            data=self.data,
+            settings=settings, secrets=secrets, data=self.data, load=self.load
         )
         self.forecast = Forecast(
-            settings=settings,
-            secrets=secrets,
-            data=self.data,
+            settings=settings, secrets=secrets, data=self.data, load=self.load
         )
 
     def run_pipeline(

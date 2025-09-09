@@ -115,6 +115,7 @@ class Load:
         if secrets is not None:
             self.set_secrets(secrets)
         self.rasters_sent = []
+        self.login_token = None
 
     def set_settings(self, settings):
         """Set settings"""
@@ -172,6 +173,9 @@ class Load:
         return gdf_adm_boundaries
 
     def __ibf_api_authenticate(self):
+        if self.login_token is not None:
+            return self.login_token
+
         no_attempts, attempt, login_response = 5, 0, None
         while attempt < no_attempts:
             try:
@@ -191,7 +195,9 @@ class Load:
                 time.sleep(60)
         if not login_response:
             raise ConnectionError("IBF API not available")
-        return login_response.json()["user"]["token"]
+
+        self.login_token = login_response.json()["user"]["token"]
+        return self.login_token
 
     def ibf_api_post_request(self, path, body=None, files=None):
         token = self.__ibf_api_authenticate()

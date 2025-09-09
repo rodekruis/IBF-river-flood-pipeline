@@ -42,13 +42,14 @@ class Extract:
         settings: Settings = None,
         secrets: Secrets = None,
         data: PipelineDataSets = None,
+        load: Load = None,
     ):
         self.source = None
         self.country = None
         self.secrets = None
         self.settings = None
         self.inputPathGrid = "./data/input"
-        self.load = Load()
+        self.load = load
         if not os.path.exists(self.inputPathGrid):
             os.makedirs(self.inputPathGrid)
         if settings is not None:
