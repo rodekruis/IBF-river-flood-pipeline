@@ -47,12 +47,12 @@ countries:
   trigger-on-lead-time: 7
   trigger-on-return-period: 10
   trigger-on-minimum-probability: 0.75
-  classify-alert-on: disable
-  alert-on-return-period: 10
-  alert-on-minimum-probability:
-    min: 0.55
-    med: 0.65
-    max: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 2
+    med: 5
+    max: 10
+  alert-on-minimum-probability: 0.75
 - name: ZMB
   admin-levels:
   - 2
