@@ -34,12 +34,12 @@ countries:
   trigger-on-lead-time: 7
   trigger-on-return-period: 5
   trigger-on-minimum-probability: 0.85
-  classify-alert-on: disable
-  alert-on-return-period: 5
-  alert-on-minimum-probability:
-    min: 0.65
-    med: 0.75
-    max: 0.85
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.85
 - name: ETH
   admin-levels:
   - 2
@@ -47,12 +47,12 @@ countries:
   trigger-on-lead-time: 7
   trigger-on-return-period: 10
   trigger-on-minimum-probability: 0.75
-  classify-alert-on: disable
-  alert-on-return-period: 10
-  alert-on-minimum-probability:
-    min: 0.55
-    med: 0.65
-    max: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 2
+    med: 5
+    max: 10
+  alert-on-minimum-probability: 0.75
 - name: ZMB
   admin-levels:
   - 2
@@ -73,12 +73,12 @@ countries:
   trigger-on-lead-time: 7
   trigger-on-return-period: 5
   trigger-on-minimum-probability: 0.6
-  classify-alert-on: disable
-  alert-on-return-period: 5
-  alert-on-minimum-probability:
-    min: 0.4
-    med: 0.5
-    max: 0.6
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
 - name: MWI
   admin-levels:
   - 2
@@ -86,12 +86,12 @@ countries:
   trigger-on-lead-time: 6
   trigger-on-return-period: 5
   trigger-on-minimum-probability: 0.6
-  classify-alert-on: disable
-  alert-on-return-period: 5
-  alert-on-minimum-probability:
-    min: 0.4
-    med: 0.5
-    max: 0.6
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
 - name: PHL
   admin-levels:
   - 2
@@ -99,9 +99,656 @@ countries:
   trigger-on-lead-time: 3
   trigger-on-return-period: 5
   trigger-on-minimum-probability: 0.8
-  classify-alert-on: disable
-  alert-on-return-period: 5
-  alert-on-minimum-probability:
-    min: 0.6
-    med: 0.7
-    max: 0.8
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.7
+- name: DZA
+  admin-levels:
+  - 1
+  - 2
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: AGO
+  admin-levels:
+  - 1
+  - 2
+  - 3
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: BEN
+  admin-levels:
+  - 1
+  - 2
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: BWA
+  admin-levels:
+  - 1
+  - 2
+  - 3
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: BFA
+  admin-levels:
+  - 1
+  - 2
+  - 3
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: BDI
+  admin-levels:
+  - 1
+  - 2
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+# - name: CPV
+#   admin-levels:
+#   - 1
+#   - 2
+#   - 3
+#   trigger-on-lead-time: 5
+#   trigger-on-return-period: 5
+#   trigger-on-minimum-probability: 0.75
+#   classify-alert-on: return-period
+#   alert-on-return-period:
+#     min: 1.5
+#     med: 2
+#     max: 5
+#   alert-on-minimum-probability: 0.6
+- name: CMR
+  admin-levels:
+  - 1
+  - 2
+  - 3
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: CAF
+  admin-levels:
+  - 1
+  - 2
+  - 3
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: TCD
+  admin-levels:
+  - 1
+  - 2
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+# - name: COM
+#   admin-levels:
+#   - 1
+#   - 2
+#   trigger-on-lead-time: 5
+#   trigger-on-return-period: 5
+#   trigger-on-minimum-probability: 0.75
+#   classify-alert-on: return-period
+#   alert-on-return-period:
+#     min: 1.5
+#     med: 2
+#     max: 5
+#   alert-on-minimum-probability: 0.6
+- name: COD
+  admin-levels:
+  - 1
+  - 2
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: COG
+  admin-levels:
+  - 1
+  - 2
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: CIV
+  admin-levels:
+  - 1
+  - 2
+  - 3
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+# - name: DJI
+#   admin-levels:
+#   - 1
+#   - 2
+#   trigger-on-lead-time: 5
+#   trigger-on-return-period: 5
+#   trigger-on-minimum-probability: 0.75
+#   classify-alert-on: return-period
+#   alert-on-return-period:
+#     min: 1.5
+#     med: 2
+#     max: 5
+#   alert-on-minimum-probability: 0.6
+# - name: EGY
+#   admin-levels:
+#   - 1
+#   - 2
+#   trigger-on-lead-time: 5
+#   trigger-on-return-period: 5
+#   trigger-on-minimum-probability: 0.75
+#   classify-alert-on: return-period
+#   alert-on-return-period:
+#     min: 1.5
+#     med: 2
+#     max: 5
+#   alert-on-minimum-probability: 0.6
+# - name: GNQ
+#   admin-levels:
+#   - 1
+#   - 2
+#   trigger-on-lead-time: 5
+#   trigger-on-return-period: 5
+#   trigger-on-minimum-probability: 0.75
+#   classify-alert-on: return-period
+#   alert-on-return-period:
+#     min: 1.5
+#     med: 2
+#     max: 5
+#   alert-on-minimum-probability: 0.6
+# - name: ERI
+#   admin-levels:
+#   - 1
+#   - 2
+#   trigger-on-lead-time: 5
+#   trigger-on-return-period: 5
+#   trigger-on-minimum-probability: 0.75
+#   classify-alert-on: return-period
+#   alert-on-return-period:
+#     min: 1.5
+#     med: 2
+#     max: 5
+#   alert-on-minimum-probability: 0.6
+- name: SWZ
+  admin-levels:
+  - 1
+  - 2
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: GAB
+  admin-levels:
+  - 1
+  - 2
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+# - name: GMB
+#   admin-levels:
+#   - 1
+#   - 2
+#   - 3
+#   trigger-on-lead-time: 5
+#   trigger-on-return-period: 5
+#   trigger-on-minimum-probability: 0.75
+#   classify-alert-on: return-period
+#   alert-on-return-period:
+#     min: 1.5
+#     med: 2
+#     max: 5
+#   alert-on-minimum-probability: 0.6
+- name: GHA
+  admin-levels:
+  - 1
+  - 2
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: GIN
+  admin-levels:
+  - 1
+  - 2
+  - 3
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: GNB
+  admin-levels:
+  - 1
+  - 2
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: LSO
+  admin-levels:
+  - 1
+  - 2
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: LBR
+  admin-levels:
+  - 1
+  - 2
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+# - name: LBY
+#   admin-levels:
+#   - 1
+#   - 2
+#   trigger-on-lead-time: 5
+#   trigger-on-return-period: 5
+#   trigger-on-minimum-probability: 0.75
+#   classify-alert-on: return-period
+#   alert-on-return-period:
+#     min: 1.5
+#     med: 2
+#     max: 5
+#   alert-on-minimum-probability: 0.6
+- name: MDG
+  admin-levels:
+  - 1
+  - 2
+  - 3
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: MLI
+  admin-levels:
+  - 1
+  - 2
+  - 3
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: MRT
+  admin-levels:
+  - 1
+  - 2
+  - 3
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+# - name: MUS
+#   admin-levels:
+#   - 1
+#   trigger-on-lead-time: 5
+#   trigger-on-return-period: 5
+#   trigger-on-minimum-probability: 0.75
+#   classify-alert-on: return-period
+#   alert-on-return-period:
+#     min: 1.5
+#     med: 2
+#     max: 5
+#   alert-on-minimum-probability: 0.6
+# - name: MAR
+#   admin-levels:
+#   - 1
+#   - 2
+#   - 3
+#   trigger-on-lead-time: 5
+#   trigger-on-return-period: 5
+#   trigger-on-minimum-probability: 0.75
+#   classify-alert-on: return-period
+#   alert-on-return-period:
+#     min: 1.5
+#     med: 2
+#     max: 5
+#   alert-on-minimum-probability: 0.6
+- name: MOZ
+  admin-levels:
+  - 1
+  - 2
+  - 3
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: NAM
+  admin-levels:
+  - 1
+  - 2
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: NER
+  admin-levels:
+  - 1
+  - 2
+  - 3
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+# - name: NGA
+#   admin-levels:
+#   - 1
+#   - 2
+#   trigger-on-lead-time: 5
+#   trigger-on-return-period: 5
+#   trigger-on-minimum-probability: 0.75
+#   classify-alert-on: return-period
+#   alert-on-return-period:
+#     min: 1.5
+#     med: 2
+#     max: 5
+#   alert-on-minimum-probability: 0.6
+- name: RWA
+  admin-levels:
+  - 1
+  - 2
+  - 3
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+# - name: STP
+#   admin-levels:
+#   - 1
+#   - 2
+#   trigger-on-lead-time: 5
+#   trigger-on-return-period: 5
+#   trigger-on-minimum-probability: 0.75
+#   classify-alert-on: return-period
+#   alert-on-return-period:
+#     min: 1.5
+#     med: 2
+#     max: 5
+#   alert-on-minimum-probability: 0.6
+- name: SEN
+  admin-levels:
+  - 1
+  - 2
+  - 3
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+# - name: SYC
+#   admin-levels:
+#   - 1
+#   - 2
+#   - 3
+#   trigger-on-lead-time: 5
+#   trigger-on-return-period: 5
+#   trigger-on-minimum-probability: 0.75
+#   classify-alert-on: return-period
+#   alert-on-return-period:
+#     min: 1.5
+#     med: 2
+#     max: 5
+#   alert-on-minimum-probability: 0.6
+- name: SLE
+  admin-levels:
+  - 1
+  - 2
+  - 3
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: SOM
+  admin-levels:
+  - 1
+  - 2
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: ZAF
+  admin-levels:
+  - 1
+  - 2
+  - 3
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: SDN
+  admin-levels:
+  - 1
+  - 2
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: TZA
+  admin-levels:
+  - 1
+  - 2
+  - 3
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+- name: TGO
+  admin-levels:
+  - 1
+  - 2
+  - 3
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
+# - name: TUN
+#   admin-levels:
+#   - 1
+#   - 2
+#   - 3
+#   trigger-on-lead-time: 5
+#   trigger-on-return-period: 5
+#   trigger-on-minimum-probability: 0.75
+#   classify-alert-on: return-period
+#   alert-on-return-period:
+#     min: 1.5
+#     med: 2
+#     max: 5
+#   alert-on-minimum-probability: 0.6
+- name: ZWE
+  admin-levels:
+  - 1
+  - 2
+  - 3
+  trigger-on-lead-time: 5
+  trigger-on-return-period: 5
+  trigger-on-minimum-probability: 0.75
+  classify-alert-on: return-period
+  alert-on-return-period:
+    min: 1.5
+    med: 2
+    max: 5
+  alert-on-minimum-probability: 0.6
