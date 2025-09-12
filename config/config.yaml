@@ -2,8 +2,8 @@
 
 floods:
   global_flood_maps_url: https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/CEMS-GLOFAS/flood_hazard
-  no_ensemble_members: 51  # number of ensemble members to consider
-  minimum_flood_depth: 0.1  # minimum flood depth in meters, to calculate affected population
+  no_ensemble_members: 51 # number of ensemble members to consider
+  minimum_flood_depth: 0.1 # minimum flood depth in meters, to calculate affected population
   glofas_threshold_url: https://confluence.ecmwf.int/display/CEMS/Auxiliary+Data
   glofas_threshold_files: flood_threshold_glofas_v4_rl
 
@@ -16,6 +16,10 @@ databases:
   postgresql_server: 510-postgresql-flex-server.postgres.database.azure.com
   postgresql_port: 5432
   postgresql_database: global510
+
+formats:
+  upload_time_format: "%Y-%m-%dT%H:%M:%S"
+  upload_time_file_name_format: "%Y%m%dT%H%M%S"
 
 countries:
   - name: UGA
@@ -116,4 +120,3 @@ countries:
       min: 0.6
       med: 0.7
       max: 0.8
-

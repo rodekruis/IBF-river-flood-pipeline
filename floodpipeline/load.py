@@ -130,6 +130,7 @@ class Load:
             raise TypeError(f"invalid format of secrets, use secrets.Secrets")
         secrets.check_secrets(
             [
+                "ENVIRONMENT",
                 "COSMOS_URL",
                 "COSMOS_KEY",
                 "BLOB_ACCOUNT_NAME",
@@ -824,10 +825,10 @@ class Load:
         container = self.settings.get_setting("blob_container")
         return blob_service_client.get_blob_client(container=container, blob=blob_path)
 
-    def save_to_blob(self, local_path: str, file_dir_blob: str):
+    def save_to_blob(self, local_path: str, blob_path: str):
         """Save file to Azure Blob Storage"""
         # upload to Azure Blob Storage
-        blob_client = self.__get_blob_service_client(file_dir_blob)
+        blob_client = self.__get_blob_service_client(blob_path)
         with open(local_path, "rb") as upload_file:
             blob_client.upload_blob(upload_file, overwrite=True)
 
@@ -842,3 +843,13 @@ class Load:
                 raise FileNotFoundError(
                     f"File {blob_path} not found in Azure Blob Storage"
                 )
+
+    def send_to_blob_storage(self, file_name: str = "forecast"):
+        """Send forecast data to Azure Blob Storage"""
+        logger.info(f"Uploading {file_name} to Azure Blob Storage")
+        output_path = os.path.join("data", "output")
+        file_path = os.path.join("data", file_name)
+        archive_path = shutil.make_archive(file_path, "zip", output_path)
+        environment = self.secrets.get_secret("ENVIRONMENT")
+        blob_path = os.path.join(environment, f"{file_name}.zip")
+        self.save_to_blob(local_path=archive_path, blob_path=blob_path)

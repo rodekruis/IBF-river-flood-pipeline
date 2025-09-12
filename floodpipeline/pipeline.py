@@ -24,6 +24,7 @@ class Pipeline:
         if country not in [c["name"] for c in self.settings.get_setting("countries")]:
             raise ValueError(f"No config found for country {country}")
         self.country = country
+        self.hazard = "river-flood"
         self.load = Load(settings=settings, secrets=secrets)
         self.data = PipelineDataSets(country=country, settings=settings)
         self.data.threshold_admin = self.load.get_pipeline_data(
@@ -109,11 +110,25 @@ class Pipeline:
                     start_date=datetimestart,
                     end_date=datetimeend,
                 )
+
             logging.info("send data to IBF API")
+
+            upload_time = datetime.now()
+            upload_time_format = self.settings.get_setting("upload_time_format")
+            upload_time_str = upload_time.strftime(upload_time_format)
+            upload_time_file_name_format = self.settings.get_setting(
+                "upload_time_file_name_format"
+            )
+            upload_time_file_name = upload_time.strftime(upload_time_file_name_format)
+
             self.load.send_to_ibf_api(
                 forecast_data=self.data.forecast_admin,
                 discharge_data=self.data.discharge_admin,
                 forecast_station_data=self.data.forecast_station,
                 discharge_station_data=self.data.discharge_station,
                 flood_extent=self.forecast.flood_extent_raster,
+                upload_time=upload_time_str,
             )
+
+            blob_path = f"{upload_time_file_name}-{self.country}-{self.hazard}"
+            self.load.send_to_blob_storage(blob_path)
