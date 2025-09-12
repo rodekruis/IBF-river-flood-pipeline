@@ -121,9 +121,7 @@ class Scenario:
 
         # prepare river discharge data
         for adm_level in adm_levels:
-            country_gdf = self.pipe.load.get_adm_boundaries(
-                country=self.country, adm_level=adm_level
-            )
+            country_gdf = self.pipe.load.get_adm_boundaries(adm_level=adm_level)
             for lead_time in range(0, 8):
                 for ix, row in country_gdf.iterrows():
                     self.pipe.data.discharge_admin.upsert_data_unit(
