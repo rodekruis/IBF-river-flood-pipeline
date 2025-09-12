@@ -3,6 +3,7 @@ from __future__ import annotations
 import os.path
 import copy
 import time
+import json
 
 from floodpipeline.secrets import Secrets
 from floodpipeline.settings import Settings
@@ -305,6 +306,8 @@ class Load:
     ):
         """Send flood forecast data to IBF API"""
 
+        events_json = []
+
         country = forecast_data.country
         trigger_on_lead_time = self.settings.get_country_setting(
             country, "trigger-on-lead-time"
@@ -361,6 +364,10 @@ class Load:
                 )
                 threshold_station = threshold_station_data.get_data_unit(station_code)
 
+                lead_time = f"{lead_time_event}-day"
+
+                alert_areas = {}
+
                 # send exposure data: admin-area-dynamic-data/exposure
                 indicators = [
                     "population_affected",
@@ -368,10 +375,15 @@ class Load:
                     "forecast_severity",
                     "forecast_trigger",
                 ]
+
                 for indicator in indicators:
                     for adm_level in forecast_station.pcodes.keys():
                         exposure_pcodes = []
                         for pcode in forecast_station.pcodes[adm_level]:
+
+                            if pcode not in alert_areas:
+                                alert_areas[pcode] = {"admin-level": int(adm_level)}
+
                             forecast_admin = forecast_data.get_data_unit(
                                 pcode, lead_time_event
                             )
@@ -403,9 +415,10 @@ class Load:
                                 {"placeCode": pcode, "amount": amount}
                             )
                             processed_pcodes.append(pcode)
+                            alert_areas[pcode][indicator] = amount
                         body = {
                             "countryCodeISO3": country,
-                            "leadTime": f"{lead_time_event}-day",
+                            "leadTime": lead_time,
                             "dynamicIndicator": indicator,
                             "adminLevel": int(adm_level),
                             "exposurePlaceCodes": exposure_pcodes,
@@ -417,6 +430,8 @@ class Load:
                             "admin-area-dynamic-data/exposure", body=body
                         )
                 processed_pcodes = list(set(processed_pcodes))
+
+                glofas_stations = {}
 
                 # GloFAS station data: point-data/dynamic
                 # 1 call per alert/triggered station, and 1 overall (to same endpoint) for all other stations
@@ -446,8 +461,13 @@ class Load:
                                     trigger_on_return_period
                                 )
                             )
+
+                        if station_code not in glofas_stations:
+                            glofas_stations[station_code] = {}
+
                         station_data = {"fid": station_code, "value": value}
                         station_forecasts[indicator].append(station_data)
+                        glofas_stations[station_code][indicator] = value
                         body = {
                             "leadTime": f"{lead_time_event}-day",
                             "key": indicator,
@@ -459,6 +479,18 @@ class Load:
                         }
                         self.ibf_api_post_request("point-data/dynamic", body=body)
                     processed_stations.append(station_code)
+
+                events_json.append(
+                    {
+                        "event-name": event_name,
+                        "date": upload_time,
+                        "country": country,
+                        "hazard": "flood",
+                        "lead-time": lead_time,
+                        "alert-areas": alert_areas,
+                        "glofas-stations": glofas_stations,
+                    }
+                )
 
             # send alerts per lead time: event/alerts-per-lead-time
             alerts_per_lead_time = []
@@ -486,6 +518,11 @@ class Load:
                 "date": upload_time,
             }
             self.ibf_api_post_request("event/alerts-per-lead-time", body=body)
+
+        events_json_path = os.path.join("data", "output", "events.json")
+
+        with open(events_json_path, "w") as f:
+            json.dump(events_json, f, indent=2)
 
         # END OF EVENT LOOP
         ###############################################################################################################

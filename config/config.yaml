@@ -18,7 +18,7 @@ databases:
   postgresql_database: global510
 
 formats:
-  upload_time_format: "%Y-%m-%dT%H:%M:%S"
+  upload_time_format: "%Y-%m-%dT%H:%M:%SZ"
   upload_time_file_name_format: "%Y%m%dT%H%M%S"
 
 countries:
