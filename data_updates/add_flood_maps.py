@@ -72,14 +72,18 @@ def add_flood_maps(country):
         country_name = country_settings["name"]
         print("Adding flood maps for", country_name)
 
+        # country_gdf = load.get_adm_boundaries(country=country_name, adm_level=1)
+        country_gdf = gpd.read_file(f"africa/adm_bnd/{country_name}_adm1.json")
+        country_gdf = country_gdf.to_crs("EPSG:4326")
+        lake_country_gdf = gpd.clip(
+            lake_gdf, country_gdf.total_bounds, keep_geom_type=True
+        )
+
         for rp in RETURN_PERIODS:
             gdf_flood_map = get_global_flood_maps(rp=int(rp))
-            country_gdf = load.get_adm_boundaries(country=country_name, adm_level=1)
-            country_gdf = country_gdf.to_crs("EPSG:4326")
-
-            lake_country_gdf = gpd.clip(
-                lake_gdf, country_gdf.total_bounds, keep_geom_type=True
-            )
+            gdf_flood_map = gdf_flood_map[
+                ~gdf_flood_map["filename"].str.contains("reclass")
+            ]
 
             # filter global flood maps based on country boundary
             gdf_flood_map = gpd.clip(
@@ -93,42 +97,65 @@ def add_flood_maps(country):
                 # download
                 flood_map_filepath = f"data/updates/{flood_map_file}"
                 url = f"{settings.get_setting('global_flood_maps_url')}/RP{rp}/{flood_map_file}"
-                r = requests.get(url)
-                with open(flood_map_filepath, "wb") as file:
-                    file.write(r.content)
+                if not os.path.exists(flood_map_filepath):
+                    r = requests.get(url)
+                    with open(flood_map_filepath, "wb") as file:
+                        file.write(r.content)
                 # clip around country boundary
                 flood_map_clipped_filepath = f"data/updates/{flood_map_file}".replace(
                     ".tif", "_clipped.tif"
                 )
-                clip, out_meta = clip_raster(
-                    flood_map_filepath, [box(*country_gdf.total_bounds)]
-                )
-                with rasterio.open(flood_map_clipped_filepath, "w", **out_meta) as dest:
-                    dest.write(clip)
-                # mask permanent water bodies
-                clip, out_meta = clip_raster(
-                    flood_map_clipped_filepath,
-                    lake_country_gdf["geometry"].tolist(),
-                    invert=True,
-                )
-                with rasterio.open(flood_map_clipped_filepath, "w", **out_meta) as dest:
-                    dest.write(clip)
+                try:
+                    clip, out_meta = clip_raster(
+                        flood_map_filepath, [box(*country_gdf.total_bounds)]
+                    )
+                    with rasterio.open(
+                        flood_map_clipped_filepath, "w", **out_meta
+                    ) as dest:
+                        dest.write(clip)
+                except:
+                    print(
+                        f"Error clipping {flood_map_file} against country bounds {country_name}, skipping"
+                    )
+                    continue
+                try:
+                    # mask permanent water bodies
+                    clip, out_meta = clip_raster(
+                        flood_map_clipped_filepath,
+                        lake_country_gdf["geometry"].tolist(),
+                        invert=True,
+                    )
+                    with rasterio.open(
+                        flood_map_clipped_filepath, "w", **out_meta
+                    ) as dest:
+                        dest.write(clip)
+                except:
+                    print(
+                        f"Error masking flood map with water bodies {flood_map_file}, skipping"
+                    )
+                    pass
+
                 flood_map_filepaths.append(flood_map_clipped_filepath)
 
             # merge flood maps
-            merged_raster_filepath = f"data/updates/flood_map_{country_name}_RP{rp}.tif"
-            mosaic, out_meta = merge_rasters(flood_map_filepaths)
-            mosaic = np.nan_to_num(mosaic)
-            out_meta.update(dtype=rasterio.float32, count=1, compress="lzw")  # compress
-            with rasterio.open(merged_raster_filepath, "w", **out_meta) as dest:
-                dest.write(mosaic.astype(rasterio.float32))
+            if len(flood_map_filepaths) > 0:
+                merged_raster_filepath = (
+                    f"data/updates/flood_map_{country_name}_RP{rp}.tif"
+                )
+                mosaic, out_meta = merge_rasters(flood_map_filepaths)
+                mosaic = np.nan_to_num(mosaic)
+                out_meta.update(
+                    dtype=rasterio.float32, count=1, compress="lzw"
+                )  # compress
+                with rasterio.open(merged_raster_filepath, "w", **out_meta) as dest:
+                    dest.write(mosaic.astype(rasterio.float32))
 
-            # save to blob storage
-            load.save_to_blob(
-                local_path=merged_raster_filepath,
-                file_dir_blob=f"{settings.get_setting('blob_storage_path')}"
-                f"/flood-maps/{country_name}/flood_map_{country_name}_RP{int(rp)}.tif",
-            )
+                # save to blob storage
+                load.save_to_blob(
+                    local_path=merged_raster_filepath,
+                    file_dir_blob=f"{settings.get_setting('blob_storage_path')}"
+                    f"/flood-maps/{country_name}/flood_map_{country_name}_RP{int(rp)}.tif",
+                )
 
 
 if __name__ == "__main__":

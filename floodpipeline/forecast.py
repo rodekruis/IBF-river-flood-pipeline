@@ -7,7 +7,7 @@ from floodpipeline.data import (
     ForecastStationDataUnit,
 )
 from floodpipeline.load import Load
-from datetime import datetime
+from floodpipeline.logger import logger
 from typing import List
 from shapely import Polygon
 from shapely.geometry import shape
@@ -131,11 +131,13 @@ class Forecast:
 
     def __init__(
         self,
+        country: str = None,
         settings: Settings = None,
         secrets: Secrets = None,
         data: PipelineDataSets = None,
         load: Load = None,
     ):
+        self.country = country
         self.secrets = None
         self.settings = None
         self.set_settings(settings)
@@ -186,24 +188,23 @@ class Forecast:
     def __compute_triggers(self):
         """Determine if trigger level is reached, its probability, and the alert class"""
 
-        country = self.data.discharge_admin.country
         trigger_on_lead_time = self.settings.get_country_setting(
-            country, "trigger-on-lead-time"
+            self.country, "trigger-on-lead-time"
         )
         trigger_on_return_period = self.settings.get_country_setting(
-            country, "trigger-on-return-period"
+            self.country, "trigger-on-return-period"
         )
         trigger_on_minimum_probability = self.settings.get_country_setting(
-            country, "trigger-on-minimum-probability"
+            self.country, "trigger-on-minimum-probability"
         )
         classify_alert_on = self.settings.get_country_setting(
-            country, "classify-alert-on"
+            self.country, "classify-alert-on"
         )
         alert_on_return_period = self.settings.get_country_setting(
-            country, "alert-on-return-period"
+            self.country, "alert-on-return-period"
         )
         alert_on_minimum_probability = self.settings.get_country_setting(
-            country, "alert-on-minimum-probability"
+            self.country, "alert-on-minimum-probability"
         )
 
         pcode_not_found = []
@@ -278,20 +279,25 @@ class Forecast:
     def __compute_flood_extent(self):
         """Compute flood extent raster"""
         # get country-wide flood extent rasters
-        country = self.data.forecast_admin.country
         if os.path.exists(self.flood_extent_raster):
             os.remove(self.flood_extent_raster)
         flood_rasters = {}
         for rp in [10, 20, 50, 75, 100, 200, 500]:
             flood_raster_filepath = (
-                self.input_data_path + f"/flood_map_{country.upper()}_RP{rp}.tif"
+                self.input_data_path + f"/flood_map_{self.country}_RP{rp}.tif"
             )
             if not os.path.exists(flood_raster_filepath):
-                self.load.get_from_blob(
-                    flood_raster_filepath,
-                    f"{self.settings.get_setting('blob_storage_path')}"
-                    f"/flood-maps/{country.upper()}/flood_map_{country.upper()}_RP{rp}.tif",
-                )
+                try:
+                    self.load.get_from_blob(
+                        flood_raster_filepath,
+                        f"{self.settings.get_setting('blob_storage_path')}"
+                        f"/flood-maps/{self.country}/flood_map_{self.country}_RP{rp}.tif",
+                    )
+                except FileNotFoundError:
+                    logger.warning(
+                        f"Flood map for {self.country} with RP {rp} not found, skipping exposure calculation."
+                    )
+                    return None
             flood_rasters[rp] = flood_raster_filepath
 
         # create empty raster
@@ -304,11 +310,13 @@ class Forecast:
             with rasterio.open(empty_raster, "w", **flood_raster_meta) as dest:
                 dest.write(flood_raster_data)
 
-        adm_lvl = self.data.forecast_admin.adm_levels[-1]
         # get adm boundaries
-        gdf_adm = self.load.get_adm_boundaries(
-            self.data.forecast_admin.country, adm_lvl
-        )
+        try:
+            adm_lvl = self.data.forecast_admin.adm_levels[-1]
+            gdf_adm = self.load.get_adm_boundaries(adm_lvl)
+        except AttributeError:
+            adm_lvl = self.data.forecast_admin.adm_levels[-2]
+            gdf_adm = self.load.get_adm_boundaries(adm_lvl)
         gdf_adm.index = gdf_adm[f"adm{adm_lvl}_pcode"]
 
         for lead_time in self.data.forecast_admin.get_lead_times():
@@ -364,9 +372,8 @@ class Forecast:
 
     def __compute_affected_pop_raster(self):
         """Compute affected population raster given a flood extent"""
-        country = self.data.forecast_admin.country
         # get population density raster
-        self.load.get_population_density(country, self.pop_raster)
+        self.load.get_population_density(self.pop_raster)
 
         flood_shapes = []
         for lead_time in self.data.forecast_admin.get_lead_times():
@@ -407,9 +414,7 @@ class Forecast:
         # calculate affected population per admin division
         for adm_lvl in self.data.forecast_admin.adm_levels:
             # get adm boundaries
-            gdf_adm = self.load.get_adm_boundaries(
-                self.data.forecast_admin.country, adm_lvl
-            )
+            gdf_adm = self.load.get_adm_boundaries(adm_lvl)
             gdf_aff_pop, gdf_pop = pd.DataFrame(), pd.DataFrame()
 
             for lead_time in self.data.forecast_admin.get_lead_times():
@@ -486,10 +491,9 @@ class Forecast:
 
         os.makedirs(self.input_data_path, exist_ok=True)
         os.makedirs(self.output_data_path, exist_ok=True)
-        country = self.data.forecast_station.country
 
         trigger_on_lead_time = self.settings.get_country_setting(
-            country, "trigger-on-lead-time"
+            self.country, "trigger-on-lead-time"
         )
         for discharge_station in self.data.discharge_station.data_units:
             station_code = discharge_station.station_code
@@ -512,19 +516,19 @@ class Forecast:
                 )
 
             trigger_on_return_period = self.settings.get_country_setting(
-                country, "trigger-on-return-period"
+                self.country, "trigger-on-return-period"
             )
             trigger_on_minimum_probability = self.settings.get_country_setting(
-                country, "trigger-on-minimum-probability"
+                self.country, "trigger-on-minimum-probability"
             )
             classify_alert_on = self.settings.get_country_setting(
-                country, "classify-alert-on"
+                self.country, "classify-alert-on"
             )
             alert_on_return_period = self.settings.get_country_setting(
-                country, "alert-on-return-period"
+                self.country, "alert-on-return-period"
             )
             alert_on_minimum_probability = self.settings.get_country_setting(
-                country, "alert-on-minimum-probability"
+                self.country, "alert-on-minimum-probability"
             )
             if trigger_on_return_period not in likelihood_per_return_period.keys():
                 raise ValueError(

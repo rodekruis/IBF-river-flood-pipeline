@@ -8,18 +8,12 @@ from floodpipeline.data import (
 from floodpipeline.load import Load
 import os
 from datetime import datetime, timedelta
-import time
-import geopandas as gpd
 import pandas as pd
 import xarray as xr
 from rasterstats import zonal_stats
 import rasterio
 import logging
 import itertools
-from typing import List
-import urllib.request
-import ftplib
-import copy
 
 supported_sources = ["GloFAS"]
 
@@ -39,25 +33,23 @@ class Extract:
 
     def __init__(
         self,
+        country: str = None,
         settings: Settings = None,
         secrets: Secrets = None,
         data: PipelineDataSets = None,
         load: Load = None,
     ):
+        self.country = country
         self.source = None
-        self.country = None
-        self.secrets = None
-        self.settings = None
+        self.set_secrets(secrets)
+        self.set_settings(settings)
+        self.load = Load(
+            country=self.country, settings=self.settings, secrets=self.secrets
+        )
         self.inputPathGrid = "./data/input"
         self.load = load
         if not os.path.exists(self.inputPathGrid):
             os.makedirs(self.inputPathGrid)
-        if settings is not None:
-            self.set_settings(settings)
-            self.load.set_settings(settings)
-        if secrets is not None:
-            self.set_secrets(secrets)
-            self.load.set_secrets(secrets)
         self.data = data
 
     def set_settings(self, settings):
@@ -110,6 +102,73 @@ class Extract:
             self.prepare_glofas_data()
             self.extract_glofas_data()
 
+    def prepare_glofas_data(self, country: str = None, debug: bool = False):
+        """
+        For each ensemble member, download the global NetCDF file and slice it to the extent of the country
+        """
+        if country is None:
+            country = self.country
+        logging.info(f"start preparing GloFAS data for country {country}")
+        country_gdf = self.load.get_adm_boundaries(adm_level=1)
+        no_ens = self.settings.get_setting("no_ensemble_members")
+        date = datetime.today().strftime("%Y%m%d")
+        if debug:
+            no_ens = 1
+            date = (datetime.today() - timedelta(days=1)).strftime("%Y%m%d")
+
+        for ensemble in range(0, no_ens):
+
+            filename_local_sliced = os.path.join(
+                self.inputPathGrid,
+                f"GloFAS_{date}_{country}_{ensemble}.nc",
+            )
+            if os.path.exists(filename_local_sliced):
+                continue
+
+            # Download netcdf file
+            logging.info(f"downloading GloFAS data for ensemble {ensemble}")
+            filename_local = os.path.join(self.inputPathGrid, f"GloFAS_{ensemble}.nc")
+            try:
+                self.load.get_from_blob(
+                    filename_local,
+                    f"{self.settings.get_setting('blob_storage_path')}"
+                    f"/glofas-data/{date}/dis_{'{:02d}'.format(ensemble)}_{date}00.nc",
+                )
+            except FileNotFoundError:
+                logging.warning(
+                    f"NetCDF file of ensemble {ensemble} not found, skipping"
+                )
+                continue
+
+            logging.info(f"slicing GloFAS data for ensemble {ensemble}")
+            try:
+                nc_file = xr.open_dataset(filename_local)
+            except ValueError:
+                logging.warning(
+                    f"Something is wrong with this file, trying to download again"
+                )
+                self.load.get_from_blob(
+                    filename_local,
+                    f"{self.settings.get_setting('blob_storage_path')}"
+                    f"/glofas-data/{date}/dis_{'{:02d}'.format(ensemble)}_{date}00.nc",
+                )
+                try:
+                    nc_file = xr.open_dataset(filename_local)
+                except ValueError:
+                    logging.warning(
+                        f"Something is definitely wrong with this file, skipping"
+                    )
+                    continue
+
+            # Slice netcdf file to country boundaries
+            country_bounds = country_gdf.total_bounds
+            nc_file_sliced = slice_netcdf_file(nc_file, country_bounds)
+            nc_file_sliced.to_netcdf(filename_local_sliced)
+
+            nc_file.close()
+            os.remove(filename_local)
+        logging.info("finished preparing GloFAS data")
+
     def extract_glofas_data(self, country: str = None, debug: bool = False):
         """
         Download GloFAS data for each ensemble member
@@ -144,9 +203,13 @@ class Extract:
 
         discharges = {}
         for adm_level in self.data.discharge_admin.adm_levels:
-            country_gdf = self.load.get_adm_boundaries(
-                country=country, adm_level=adm_level
-            )
+            try:
+                country_gdf = self.load.get_adm_boundaries(adm_level=adm_level)
+            except AttributeError:
+                logging.error(
+                    f"Country {country} does not have admin level {adm_level}, skipping"
+                )
+                continue
             for ensemble in range(0, no_ens):
                 filename = os.path.join(
                     self.inputPathGrid,
@@ -240,66 +303,3 @@ class Extract:
                         discharge_ensemble=discharges_stations[key],
                     )
                 )
-
-    def prepare_glofas_data(self, country: str = None, debug: bool = False):
-        """
-        For each ensemble member, download the global NetCDF file and slice it to the extent of the country
-        """
-        if country is None:
-            country = self.country
-        logging.info(f"start preparing GloFAS data for country {country}")
-        country_gdf = self.load.get_adm_boundaries(country=country, adm_level=1)
-        no_ens = self.settings.get_setting("no_ensemble_members")
-        date = datetime.today().strftime("%Y%m%d")
-        if debug:
-            no_ens = 1
-            date = (datetime.today() - timedelta(days=1)).strftime("%Y%m%d")
-
-        for ensemble in range(0, no_ens):
-            # Download netcdf file
-            logging.info(f"downloading GloFAS data for ensemble {ensemble}")
-            filename_local = os.path.join(self.inputPathGrid, f"GloFAS_{ensemble}.nc")
-            try:
-                self.load.get_from_blob(
-                    filename_local,
-                    f"{self.settings.get_setting('blob_storage_path')}"
-                    f"/glofas-data/{date}/dis_{'{:02d}'.format(ensemble)}_{date}00.nc",
-                )
-            except FileNotFoundError:
-                logging.warning(
-                    f"NetCDF file of ensemble {ensemble} not found, skipping"
-                )
-                continue
-
-            logging.info(f"slicing GloFAS data for ensemble {ensemble}")
-            try:
-                nc_file = xr.open_dataset(filename_local)
-            except ValueError:
-                logging.warning(
-                    f"Something is wrong with this file, trying to download again"
-                )
-                self.load.get_from_blob(
-                    filename_local,
-                    f"{self.settings.get_setting('blob_storage_path')}"
-                    f"/glofas-data/{date}/dis_{'{:02d}'.format(ensemble)}_{date}00.nc",
-                )
-                try:
-                    nc_file = xr.open_dataset(filename_local)
-                except ValueError:
-                    logging.warning(
-                        f"Something is definitely wrong with this file, skipping"
-                    )
-                    continue
-
-            # Slice netcdf file to country boundaries
-            country_bounds = country_gdf.total_bounds
-            nc_file_sliced = slice_netcdf_file(nc_file, country_bounds)
-            filename_local_sliced = os.path.join(
-                self.inputPathGrid,
-                f"GloFAS_{date}_{country}_{ensemble}.nc",
-            )
-            nc_file_sliced.to_netcdf(filename_local_sliced)
-
-            nc_file.close()
-            os.remove(filename_local)
-        logging.info("finished preparing GloFAS data")

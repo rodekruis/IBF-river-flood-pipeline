@@ -155,8 +155,13 @@ class AdminDataSet:
     ):
         self.country = country
         self.timestamp = timestamp
-        self.adm_levels = adm_levels
         self.data_units = data_units
+        if not adm_levels and data_units and len(data_units) > 0:
+            self.adm_levels = list(
+                set([data_unit.adm_level for data_unit in data_units])
+            )
+        else:
+            self.adm_levels = adm_levels
 
     def get_pcodes(self, adm_level: int = None):
         """Return list of unique pcodes, optionally filtered by adm_level"""
