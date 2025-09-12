@@ -3,6 +3,7 @@ from __future__ import annotations
 import os.path
 import copy
 import time
+import csv
 import json
 
 from floodpipeline.secrets import Secrets
@@ -39,6 +40,20 @@ COSMOS_DATA_TYPES = [
     "discharge-station",
     "forecast-station",
     "threshold-station",
+]
+
+AREA_INDICATORS = [
+    "population_affected",
+    "population_affected_percentage",
+    "forecast_severity",
+    "forecast_trigger",
+]
+
+STATION_INDICATORS = [
+    "forecastLevel",
+    "eapAlertClass",
+    "forecastReturnPeriod",
+    "triggerLevel",
 ]
 
 
@@ -369,20 +384,13 @@ class Load:
                 alert_areas = {}
 
                 # send exposure data: admin-area-dynamic-data/exposure
-                indicators = [
-                    "population_affected",
-                    "population_affected_percentage",
-                    "forecast_severity",
-                    "forecast_trigger",
-                ]
-
-                for indicator in indicators:
+                for indicator in AREA_INDICATORS:
                     for adm_level in forecast_station.pcodes.keys():
                         exposure_pcodes = []
                         for pcode in forecast_station.pcodes[adm_level]:
 
                             if pcode not in alert_areas:
-                                alert_areas[pcode] = {"admin-level": int(adm_level)}
+                                alert_areas[pcode] = {"admin_level": int(adm_level)}
 
                             forecast_admin = forecast_data.get_data_unit(
                                 pcode, lead_time_event
@@ -445,7 +453,7 @@ class Load:
                     discharge_station = discharge_station_data.get_data_unit(
                         station_code, lead_time_event
                     )
-                    for indicator in station_forecasts.keys():
+                    for indicator in STATION_INDICATORS:
                         value = None
                         if indicator == "forecastLevel":
                             value = int(discharge_station.discharge_mean or 0)
@@ -482,13 +490,13 @@ class Load:
 
                 events_json.append(
                     {
-                        "event-name": event_name,
+                        "event_name": event_name,
                         "date": upload_time,
                         "country": country,
                         "hazard": "flood",
-                        "lead-time": lead_time,
-                        "alert-areas": alert_areas,
-                        "glofas-stations": glofas_stations,
+                        "lead_time": lead_time,
+                        "alert_areas": alert_areas,
+                        "glofas_stations": glofas_stations,
                     }
                 )
 
@@ -519,10 +527,7 @@ class Load:
             }
             self.ibf_api_post_request("event/alerts-per-lead-time", body=body)
 
-        events_json_path = os.path.join("data", "output", "events.json")
-
-        with open(events_json_path, "w") as f:
-            json.dump(events_json, f, indent=2)
+        self.export_to_json_and_csv(events_json)
 
         # END OF EVENT LOOP
         ###############################################################################################################
@@ -550,13 +555,7 @@ class Load:
 
         # send empty exposure data
         if len(processed_pcodes) == 0:
-            indicators = [
-                "population_affected",
-                "population_affected_percentage",
-                "forecast_severity",
-                "forecast_trigger",
-            ]
-            for indicator in indicators:
+            for indicator in AREA_INDICATORS:
                 for adm_level in forecast_data.adm_levels:
                     exposure_pcodes = []
                     for pcode in forecast_data.get_pcodes(adm_level=adm_level):
@@ -594,7 +593,7 @@ class Load:
             "forecastReturnPeriod": [],
             "triggerLevel": [],
         }
-        for indicator in station_forecasts.keys():
+        for indicator in STATION_INDICATORS:
             for station_code in forecast_station_data.get_station_codes():
                 if station_code not in processed_stations:
                     discharge_station = discharge_station_data.get_data_unit(
@@ -638,6 +637,73 @@ class Load:
             "date": upload_time,
         }
         self.ibf_api_post_request("events/process", body=body)
+
+    def export_to_json_and_csv(
+        self, events: list[dict], output_dir: str = "data/output"
+    ):
+        with open(f"{output_dir}/events.json", "w") as f:
+            json.dump(events, f, indent=2)
+
+        with open(f"{output_dir}/events.csv", "w", newline="") as f:
+            writer = csv.writer(f, lineterminator="\n")
+            writer.writerow(["event_name", "date", "country", "hazard", "lead_time"])
+            for event in events:
+                writer.writerow(
+                    [
+                        event.get("event_name"),
+                        event.get("date"),
+                        event.get("country"),
+                        event.get("hazard"),
+                        event.get("lead_time"),
+                    ]
+                )
+
+        with open(f"{output_dir}/alert-areas.csv", "w", newline="") as f:
+            writer = csv.writer(f, lineterminator="\n")
+            writer.writerow(
+                [
+                    "event_name",
+                    "admin_level",
+                    "place_code",
+                ]
+                + AREA_INDICATORS
+            )
+            for event in events:
+                for place_code, alert_area in event.get("alert_areas", {}).items():
+                    writer.writerow(
+                        [
+                            event.get("event_name"),
+                            alert_area.get("admin_level"),
+                            place_code,
+                            *[
+                                alert_area.get(indicator)
+                                for indicator in AREA_INDICATORS
+                            ],
+                        ]
+                    )
+
+        with open(f"{output_dir}/glofas-stations.csv", "w", newline="") as f:
+            writer = csv.writer(f, lineterminator="\n")
+            writer.writerow(
+                [
+                    "event_name",
+                    "glofas_station",
+                ]
+                + STATION_INDICATORS
+            )
+
+            for event in events:
+                for station_code, station in event.get("glofas_stations", {}).items():
+                    writer.writerow(
+                        [
+                            event.get("event_name"),
+                            station_code,
+                            *[
+                                station.get(indicator)
+                                for indicator in STATION_INDICATORS
+                            ],
+                        ]
+                    )
 
     def save_pipeline_data(
         self, data_type: str, dataset: AdminDataSet, replace_country: bool = False
@@ -865,6 +931,7 @@ class Load:
     def save_to_blob(self, local_path: str, blob_path: str):
         """Save file to Azure Blob Storage"""
         # upload to Azure Blob Storage
+        logger.info(f"Uploading {local_path} to Azure Blob Storage {blob_path}")
         blob_client = self.__get_blob_service_client(blob_path)
         with open(local_path, "rb") as upload_file:
             blob_client.upload_blob(upload_file, overwrite=True)
@@ -883,10 +950,12 @@ class Load:
 
     def send_to_blob_storage(self, file_name: str = "forecast"):
         """Send forecast data to Azure Blob Storage"""
-        logger.info(f"Uploading {file_name} to Azure Blob Storage")
+
         output_path = os.path.join("data", "output")
         file_path = os.path.join("data", file_name)
         archive_path = shutil.make_archive(file_path, "zip", output_path)
+
         environment = self.secrets.get_secret("ENVIRONMENT")
         blob_path = os.path.join(environment, f"{file_name}.zip")
+
         self.save_to_blob(local_path=archive_path, blob_path=blob_path)
