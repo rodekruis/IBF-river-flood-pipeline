@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from floodpipeline.extract import Extract
 from floodpipeline.forecast import Forecast
 from floodpipeline.load import Load
@@ -55,7 +57,7 @@ class Pipeline:
             self.forecast.compute_forecast()
 
         if send:
-            logging.info("send data to IBF API")
+            logger.info("send data to IBF API")
 
             upload_time = datetime.now()
             upload_time_format = self.settings.get_setting("upload_time_format")
