@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os.path
 import time
+import csv
+import json
 
 from floodpipeline.secrets import Secrets
 from floodpipeline.settings import Settings
@@ -11,25 +13,46 @@ from floodpipeline.data import (
     DischargeDataUnit,
     ForecastDataUnit,
     ThresholdDataUnit,
-    StationDataUnit,
     StationDataSet,
     ThresholdStationDataUnit,
     ForecastStationDataUnit,
     DischargeStationDataUnit,
-    PipelineDataSets,
 )
 from urllib.error import HTTPError
-import json
 from datetime import datetime
 import logging
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import requests
 import geopandas as gpd
-from typing import List
 import shutil
 from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import ResourceNotFoundError
+
+logger = logging.getLogger()
+
+COSMOS_DATA_TYPES = [
+    "discharge",
+    "forecast",
+    "threshold",
+    "discharge-station",
+    "forecast-station",
+    "threshold-station",
+]
+
+AREA_INDICATORS = [
+    "population_affected",
+    "population_affected_percentage",
+    "forecast_severity",
+    "forecast_trigger",
+]
+
+STATION_INDICATORS = [
+    "forecastLevel",
+    "eapAlertClass",
+    "forecastReturnPeriod",
+    "triggerLevel",
+]
 
 
 def alert_class_to_severity(alert_class: str, triggered: bool) -> float:
@@ -63,6 +86,7 @@ class Load:
         if secrets is not None:
             self.set_secrets(secrets)
         self.rasters_sent = []
+        self.login_token = None
 
     def set_settings(self, settings):
         """Set settings"""
@@ -79,6 +103,7 @@ class Load:
             raise TypeError(f"invalid format of secrets, use secrets.Secrets")
         secrets.check_secrets(
             [
+                "ENVIRONMENT",
                 "COSMOS_URL",
                 "COSMOS_KEY",
                 "BLOB_ACCOUNT_NAME",
@@ -118,16 +143,22 @@ class Load:
         return gdf_adm_boundaries
 
     def __ibf_api_authenticate(self):
+        if self.login_token is not None:
+            return self.login_token
+
         no_attempts, attempt, login_response = 5, 0, None
         while attempt < no_attempts:
             try:
+                login_url = self.secrets.get_secret("IBF_API_URL") + "user/login"
+                logger.info(f"POST {login_url}")
                 login_response = requests.post(
-                    self.secrets.get_secret("IBF_API_URL") + "user/login",
+                    login_url,
                     data=[
                         ("email", self.secrets.get_secret("IBF_API_USER")),
                         ("password", self.secrets.get_secret("IBF_API_PASSWORD")),
                     ],
                 )
+                logger.info(f"POST {login_url} {login_response.status_code}")
                 break
             except requests.exceptions.ConnectionError:
                 attempt += 1
@@ -137,7 +168,9 @@ class Load:
                 time.sleep(60)
         if not login_response:
             raise ConnectionError("IBF API not available")
-        return login_response.json()["user"]["token"]
+
+        self.login_token = login_response.json()["user"]["token"]
+        return self.login_token
 
     def ibf_api_post_request(self, path, body=None, files=None):
         token = self.__ibf_api_authenticate()
@@ -156,12 +189,15 @@ class Load:
         adapter = HTTPAdapter(max_retries=retry)
         session.mount("http://", adapter)
         session.mount("https://", adapter)
+        url = self.secrets.get_secret("IBF_API_URL") + path
+        logger.info(f"POST {url}")
         r = session.post(
-            self.secrets.get_secret("IBF_API_URL") + path,
+            url,
             json=body,
             files=files,
             headers=headers,
         )
+        logger.info(f"POST {url} {r.status_code}")
         if r.status_code >= 400:
             raise ValueError(
                 f"Error in IBF API POST request: {r.status_code}, {r.text}"
@@ -178,11 +214,14 @@ class Load:
         adapter = HTTPAdapter(max_retries=retry)
         session.mount("http://", adapter)
         session.mount("https://", adapter)
+        url = self.secrets.get_secret("IBF_API_URL") + path
+        logger.info(f"GET {url}")
         r = session.get(
-            self.secrets.get_secret("IBF_API_URL") + path,
+            url,
             headers=headers,
             params=parameters,
         )
+        logger.info(f"GET {url} {r.status_code}")
         if r.status_code >= 400:
             raise ValueError(f"Error in IBF API GET request: {r.status_code}, {r.text}")
         return r.json()
@@ -219,6 +258,8 @@ class Load:
         upload_time: str = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
     ):
         """Send flood forecast data to IBF API"""
+
+        events_json = []
 
         trigger_on_lead_time = self.settings.get_country_setting(
             self.country, "trigger-on-lead-time"
@@ -273,17 +314,19 @@ class Load:
                 )
                 threshold_station = threshold_station_data.get_data_unit(station_code)
 
+                lead_time = f"{lead_time_event}-day"
+
+                alert_areas = {}
+
                 # send exposure data: admin-area-dynamic-data/exposure
-                indicators = [
-                    "population_affected",
-                    "population_affected_percentage",
-                    "forecast_severity",
-                    "forecast_trigger",
-                ]
-                for indicator in indicators:
+                for indicator in AREA_INDICATORS:
                     for adm_level in forecast_station.pcodes.keys():
                         exposure_pcodes = []
                         for pcode in forecast_station.pcodes[adm_level]:
+
+                            if pcode not in alert_areas:
+                                alert_areas[pcode] = {"admin_level": int(adm_level)}
+
                             forecast_admin = forecast_data.get_data_unit(
                                 pcode, lead_time_event
                             )
@@ -315,9 +358,10 @@ class Load:
                                 {"placeCode": pcode, "amount": amount}
                             )
                             processed_pcodes.append(pcode)
+                            alert_areas[pcode][indicator] = amount
                         body = {
                             "countryCodeISO3": self.country,
-                            "leadTime": f"{lead_time_event}-day",
+                            "leadTime": lead_time,
                             "dynamicIndicator": indicator,
                             "adminLevel": int(adm_level),
                             "exposurePlaceCodes": exposure_pcodes,
@@ -329,6 +373,8 @@ class Load:
                             "admin-area-dynamic-data/exposure", body=body
                         )
                 processed_pcodes = list(set(processed_pcodes))
+
+                glofas_stations = {}
 
                 # GloFAS station data: point-data/dynamic
                 # 1 call per alert/triggered station, and 1 overall (to same endpoint) for all other stations
@@ -342,7 +388,7 @@ class Load:
                     discharge_station = discharge_station_data.get_data_unit(
                         station_code, lead_time_event
                     )
-                    for indicator in station_forecasts.keys():
+                    for indicator in STATION_INDICATORS:
                         value = None
                         if indicator == "forecastLevel":
                             value = int(discharge_station.discharge_mean or 0)
@@ -358,8 +404,13 @@ class Load:
                                     trigger_on_return_period
                                 )
                             )
+
+                        if station_code not in glofas_stations:
+                            glofas_stations[station_code] = {}
+
                         station_data = {"fid": station_code, "value": value}
                         station_forecasts[indicator].append(station_data)
+                        glofas_stations[station_code][indicator] = value
                         body = {
                             "leadTime": f"{lead_time_event}-day",
                             "key": indicator,
@@ -371,6 +422,18 @@ class Load:
                         }
                         self.ibf_api_post_request("point-data/dynamic", body=body)
                     processed_stations.append(station_code)
+
+                events_json.append(
+                    {
+                        "event_name": event_name,
+                        "date": upload_time,
+                        "country": self.country,
+                        "hazard": "flood",
+                        "lead_time": lead_time,
+                        "alert_areas": alert_areas,
+                        "glofas_stations": glofas_stations,
+                    }
+                )
 
             # send alerts per lead time: event/alerts-per-lead-time
             alerts_per_lead_time = []
@@ -399,6 +462,8 @@ class Load:
             }
             self.ibf_api_post_request("event/alerts-per-lead-time", body=body)
 
+        self.export_to_json_and_csv(events_json)
+
         # END OF EVENT LOOP
         ###############################################################################################################
 
@@ -425,13 +490,7 @@ class Load:
 
         # send empty exposure data
         if len(processed_pcodes) == 0:
-            indicators = [
-                "population_affected",
-                "population_affected_percentage",
-                "forecast_severity",
-                "forecast_trigger",
-            ]
-            for indicator in indicators:
+            for indicator in AREA_INDICATORS:
                 for adm_level in forecast_data.adm_levels:
                     exposure_pcodes = []
                     for pcode in forecast_data.get_pcodes(adm_level=adm_level):
@@ -469,7 +528,7 @@ class Load:
             "forecastReturnPeriod": [],
             "triggerLevel": [],
         }
-        for indicator in station_forecasts.keys():
+        for indicator in STATION_INDICATORS:
             for station_code in forecast_station_data.get_station_codes():
                 if station_code not in processed_stations:
                     discharge_station = discharge_station_data.get_data_unit(
@@ -513,6 +572,73 @@ class Load:
             "date": upload_time,
         }
         self.ibf_api_post_request("events/process", body=body)
+
+    def export_to_json_and_csv(
+        self, events: list[dict], output_dir: str = "data/output"
+    ):
+        with open(f"{output_dir}/events.json", "w") as f:
+            json.dump(events, f, indent=2)
+
+        with open(f"{output_dir}/events.csv", "w", newline="") as f:
+            writer = csv.writer(f, lineterminator="\n")
+            writer.writerow(["event_name", "date", "country", "hazard", "lead_time"])
+            for event in events:
+                writer.writerow(
+                    [
+                        event.get("event_name"),
+                        event.get("date"),
+                        event.get("country"),
+                        event.get("hazard"),
+                        event.get("lead_time"),
+                    ]
+                )
+
+        with open(f"{output_dir}/alert-areas.csv", "w", newline="") as f:
+            writer = csv.writer(f, lineterminator="\n")
+            writer.writerow(
+                [
+                    "event_name",
+                    "admin_level",
+                    "place_code",
+                ]
+                + AREA_INDICATORS
+            )
+            for event in events:
+                for place_code, alert_area in event.get("alert_areas", {}).items():
+                    writer.writerow(
+                        [
+                            event.get("event_name"),
+                            alert_area.get("admin_level"),
+                            place_code,
+                            *[
+                                alert_area.get(indicator)
+                                for indicator in AREA_INDICATORS
+                            ],
+                        ]
+                    )
+
+        with open(f"{output_dir}/glofas-stations.csv", "w", newline="") as f:
+            writer = csv.writer(f, lineterminator="\n")
+            writer.writerow(
+                [
+                    "event_name",
+                    "glofas_station",
+                ]
+                + STATION_INDICATORS
+            )
+
+            for event in events:
+                for station_code, station in event.get("glofas_stations", {}).items():
+                    writer.writerow(
+                        [
+                            event.get("event_name"),
+                            station_code,
+                            *[
+                                station.get(indicator)
+                                for indicator in STATION_INDICATORS
+                            ],
+                        ]
+                    )
 
     def get_thresholds_station(self):
         """Get GloFAS station thresholds from config file"""
@@ -587,10 +713,11 @@ class Load:
         container = self.settings.get_setting("blob_container")
         return blob_service_client.get_blob_client(container=container, blob=blob_path)
 
-    def save_to_blob(self, local_path: str, file_dir_blob: str):
+    def save_to_blob(self, local_path: str, blob_path: str):
         """Save file to Azure Blob Storage"""
         # upload to Azure Blob Storage
-        blob_client = self.__get_blob_service_client(file_dir_blob)
+        logger.info(f"Uploading {local_path} to Azure Blob Storage {blob_path}")
+        blob_client = self.__get_blob_service_client(blob_path)
         with open(local_path, "rb") as upload_file:
             blob_client.upload_blob(upload_file, overwrite=True)
 
@@ -605,3 +732,15 @@ class Load:
                 raise FileNotFoundError(
                     f"File {blob_path} not found in Azure Blob Storage"
                 )
+
+    def send_to_blob_storage(self, file_name: str = "forecast"):
+        """Send forecast data to Azure Blob Storage"""
+
+        output_path = os.path.join("data", "output")
+        file_path = os.path.join("data", file_name)
+        archive_path = shutil.make_archive(file_path, "zip", output_path)
+
+        environment = self.secrets.get_secret("ENVIRONMENT")
+        blob_path = os.path.join(environment, f"{file_name}.zip")
+
+        self.save_to_blob(local_path=archive_path, blob_path=blob_path)

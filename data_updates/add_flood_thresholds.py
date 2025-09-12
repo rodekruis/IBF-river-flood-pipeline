@@ -38,6 +38,8 @@ settings = Settings("config/config.yaml")
 @click.command()
 @click.option("--country", "-c", help="country ISO3", default="all")
 def add_flood_thresholds(country):
+    load = Load(settings=settings, secrets=secrets)
+
     os.makedirs("data/updates", exist_ok=True)
 
     if country != "all" and country not in [

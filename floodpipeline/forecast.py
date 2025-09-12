@@ -135,15 +135,14 @@ class Forecast:
         settings: Settings = None,
         secrets: Secrets = None,
         data: PipelineDataSets = None,
+        load: Load = None,
     ):
         self.country = country
         self.secrets = None
         self.settings = None
         self.set_settings(settings)
         self.set_secrets(secrets)
-        self.load = Load(
-            country=self.country, settings=self.settings, secrets=self.secrets
-        )
+        self.load = load
         self.input_data_path: str = "data/input"
         self.output_data_path: str = "data/output"
         self.flood_extent_raster: str = self.output_data_path + "/flood_extent.tif"
