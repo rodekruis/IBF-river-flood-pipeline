@@ -37,7 +37,6 @@ def run_scenario(events, country, upload_time):
     print(f"send to IBF API")
     pipe.load.send_to_ibf_api(
         forecast_data=pipe.data.forecast_admin,
-        discharge_data=pipe.data.discharge_admin,
         forecast_station_data=pipe.data.forecast_station,
         discharge_station_data=pipe.data.discharge_station,
         flood_extent=pipe.forecast.flood_extent_raster,
