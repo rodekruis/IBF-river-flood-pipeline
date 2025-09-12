@@ -20,7 +20,6 @@ from floodpipeline.data import (
 )
 from urllib.error import HTTPError
 from datetime import datetime
-import azure.cosmos.cosmos_client as cosmos_client
 import logging
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -54,6 +53,7 @@ STATION_INDICATORS = [
     "forecastReturnPeriod",
     "triggerLevel",
 ]
+
 
 def alert_class_to_severity(alert_class: str, triggered: bool) -> float:
     """Convert alert class to 'forecast_severity'"""
