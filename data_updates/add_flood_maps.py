@@ -13,8 +13,7 @@ import re
 
 RETURN_PERIODS = [10, 20, 50, 75, 100, 200, 500]
 secrets = Secrets()
-settings = Settings("config/config_new.yaml")
-load = Load(settings=settings, secrets=secrets)
+settings = Settings("config/config.yaml")
 
 
 def get_global_flood_maps(rp: int) -> gpd.GeoDataFrame:

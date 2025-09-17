@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from floodpipeline.extract import Extract
 from floodpipeline.forecast import Forecast
 from floodpipeline.load import Load
@@ -15,6 +17,7 @@ class Pipeline:
         if country not in [c["name"] for c in self.settings.get_setting("countries")]:
             raise ValueError(f"No config found for country {country}")
         self.country = country
+        self.hazard = "river-flood"
         self.data = PipelineDataSets(country=country, settings=settings)
         self.load = Load(country=country, settings=settings, secrets=secrets)
         self.data.threshold_admin = self.load.get_thresholds_admin()
@@ -24,12 +27,14 @@ class Pipeline:
             settings=settings,
             secrets=secrets,
             data=self.data,
+            load=self.load,
         )
         self.forecast = Forecast(
             country=country,
             settings=settings,
             secrets=secrets,
             data=self.data,
+            load=self.load,
         )
 
     def run_pipeline(
@@ -53,9 +58,22 @@ class Pipeline:
 
         if send:
             logger.info("send data to IBF API")
+
+            upload_time = datetime.now()
+            upload_time_format = self.settings.get_setting("upload_time_format")
+            upload_time_str = upload_time.strftime(upload_time_format)
+            upload_time_file_name_format = self.settings.get_setting(
+                "upload_time_file_name_format"
+            )
+            upload_time_file_name = upload_time.strftime(upload_time_file_name_format)
+
             self.load.send_to_ibf_api(
                 forecast_data=self.data.forecast_admin,
                 forecast_station_data=self.data.forecast_station,
                 discharge_station_data=self.data.discharge_station,
                 flood_extent=self.forecast.flood_extent_raster,
+                upload_time=upload_time_str,
             )
+
+            blob_path = f"{upload_time_file_name}-{self.country}-{self.hazard}"
+            self.load.send_to_blob_storage(blob_path)
