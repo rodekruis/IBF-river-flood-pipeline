@@ -1,4 +1,4 @@
-name: Update pipeline prod
+name: Update pipeline prod for REBUMAA service
 
 on:
   push:
