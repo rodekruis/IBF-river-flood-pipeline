@@ -35,7 +35,7 @@ def run_river_flood_pipeline(
     datetimeend = datetime.strptime(datetimeend, "%Y-%m-%dT%H:%M:%S")
     pipe = Pipeline(
         country=country,
-        settings=Settings("config/config.yaml"),
+        settings=Settings("config/config-rebumaa.yaml"),
         secrets=Secrets(".env"),
     )
     pipe.run_pipeline(
