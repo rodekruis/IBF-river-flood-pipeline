@@ -22,39 +22,36 @@ countries:
   admin-levels:
   - 1
   - 2
-  trigger-on-lead-time: 5
-  trigger-on-return-period: 5
-  trigger-on-minimum-probability: 0.75
+  trigger-on-lead-time: 3
+  trigger-on-return-period: 2
+  trigger-on-minimum-probability: 0.70
   classify-alert-on: return-period
   alert-on-return-period:
-    min: 1.5
-    med: 2
-    max: 5
-  alert-on-minimum-probability: 0.6
+    med: 1.5
+    max: 2
+  alert-on-minimum-probability: 0.5
 - name: NGA
   admin-levels:
   - 1
   - 2
-  trigger-on-lead-time: 5
-  trigger-on-return-period: 5
-  trigger-on-minimum-probability: 0.75
+  trigger-on-lead-time: 3
+  trigger-on-return-period: 2
+  trigger-on-minimum-probability: 0.70
   classify-alert-on: return-period
   alert-on-return-period:
-    min: 1.5
-    med: 2
-    max: 5
-  alert-on-minimum-probability: 0.6
+    med: 1.5
+    max: 2
+  alert-on-minimum-probability: 0.5
 - name: TGO
   admin-levels:
   - 1
   - 2
   - 3
-  trigger-on-lead-time: 5
-  trigger-on-return-period: 5
-  trigger-on-minimum-probability: 0.75
+  trigger-on-lead-time: 3
+  trigger-on-return-period: 2
+  trigger-on-minimum-probability: 0.70
   classify-alert-on: return-period
   alert-on-return-period:
-    min: 1.5
-    med: 2
-    max: 5
-  alert-on-minimum-probability: 0.6
+    med: 1.5
+    max: 2
+  alert-on-minimum-probability: 0.5
