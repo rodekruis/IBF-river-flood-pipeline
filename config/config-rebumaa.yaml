@@ -24,7 +24,7 @@ countries:
   - 2
   trigger-on-lead-time: 3
   trigger-on-return-period: 2
-  trigger-on-minimum-probability: 0.70
+  trigger-on-minimum-probability: 0.50
   classify-alert-on: return-period
   alert-on-return-period:
     med: 1.5
@@ -36,7 +36,7 @@ countries:
   - 2
   trigger-on-lead-time: 3
   trigger-on-return-period: 2
-  trigger-on-minimum-probability: 0.70
+  trigger-on-minimum-probability: 0.50
   classify-alert-on: return-period
   alert-on-return-period:
     med: 1.5
@@ -49,7 +49,7 @@ countries:
   - 3
   trigger-on-lead-time: 3
   trigger-on-return-period: 2
-  trigger-on-minimum-probability: 0.70
+  trigger-on-minimum-probability: 0.50
   classify-alert-on: return-period
   alert-on-return-period:
     med: 1.5
