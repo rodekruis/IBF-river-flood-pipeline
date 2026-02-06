@@ -272,7 +272,41 @@ class Forecast:
                     alert_class=alert_class,
                 )
                 self.data.forecast_admin.upsert_data_unit(forecast_data_unit)
-        print(f"NOTE: pcode not found in IBF cosmos: {pcode_not_found}")
+
+        # check if any lower admin division is triggered but the upper one isn't, if so, trigger the upper one as well
+        gdf_adms = {}
+        for adm_level in self.data.forecast_admin.adm_levels:
+            gdf_adm = self.load.get_adm_boundaries(
+                self.data.forecast_admin.country, adm_level
+            )
+            gdf_adms[adm_level] = gdf_adm
+        for adm_level in self.data.forecast_admin.adm_levels:
+            for forecast_data_unit in self.data.forecast_admin.get_data_units(
+                adm_level=adm_level
+            ):
+                if not forecast_data_unit.triggered:
+                    lower_adm_level = adm_level + 1
+                    if lower_adm_level in self.data.forecast_admin.adm_levels:
+                        # get lower admin divisions contained in the current admin division
+                        pcodes_in_current_adm = gdf_adms[lower_adm_level][
+                            gdf_adms[lower_adm_level][f"adm{adm_level}_pcode"]
+                            == forecast_data_unit.pcode
+                        ][f"adm{lower_adm_level}_pcode"].tolist()
+                        lower_forecast_data_units = (
+                            self.data.forecast_admin.get_data_units(
+                                adm_level=lower_adm_level,
+                                lead_time=forecast_data_unit.lead_time,
+                            )
+                        )
+                        for lower_forecast_data_unit in lower_forecast_data_units:
+                            if (
+                                lower_forecast_data_unit.pcode in pcodes_in_current_adm
+                                and lower_forecast_data_unit.triggered
+                            ):
+                                forecast_data_unit.triggered = True
+                                forecast_data_unit.alert_class = (
+                                    lower_forecast_data_unit.alert_class
+                                )
 
     def __compute_flood_extent(self):
         """Compute flood extent raster"""
@@ -469,7 +503,6 @@ class Forecast:
                                 )
                                 * 100.0
                             )
-
                         except (ValueError, TypeError, KeyError):
                             forecast_data_unit.pop_affected_perc = 0.0
 
