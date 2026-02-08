@@ -326,6 +326,7 @@ class Load:
             if not events:
                 continue
             events = dict(sorted(events.items()))
+            last_event_type, last_event_lead_time = "", 0
 
             for lead_time_event, event_type in events.items():
 
@@ -338,6 +339,15 @@ class Load:
                 event_name = str(station_name) if station_name else str(station_code)
                 if event_name == "" or event_name == "None" or event_name == "Na":
                     event_name = str(station_code)
+
+                # if already sent data for this event for a previous lead time, break
+                if (
+                    event_type == last_event_type
+                    and lead_time_event > last_event_lead_time
+                ):
+                    break
+                else:
+                    last_event_type, last_event_lead_time = event_type, lead_time_event
 
                 logging.info(
                     f"event {event_name}, type '{event_type}', lead time {lead_time_event}"
