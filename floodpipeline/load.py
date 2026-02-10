@@ -309,7 +309,7 @@ class Load:
 
             # determine events
             events = {}
-            for lead_time in range(1, 8):
+            for lead_time in range(0, 8):
                 if (
                     forecast_station_data.get_data_unit(
                         station_code, lead_time
@@ -317,7 +317,7 @@ class Load:
                     != "no"
                 ):
                     events[lead_time] = "alert"
-            for lead_time in range(1, 8):
+            for lead_time in range(0, 8):
                 if forecast_station_data.get_data_unit(
                     station_code, lead_time
                 ).triggered:

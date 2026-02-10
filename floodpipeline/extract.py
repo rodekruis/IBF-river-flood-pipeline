@@ -156,9 +156,9 @@ class Extract:
                         f"Country-specific NetCDF file of ensemble {ensemble} not found, skipping"
                     )
                     continue
-                for lead_time in range(1, 8):
+                for lead_time in range(0, 8):
                     with rasterio.open(filename) as src:
-                        raster_array = src.read(lead_time)
+                        raster_array = src.read(lead_time + 1)
                         transform = src.transform
                     # Perform zonal statistics for admin divisions
                     stats = zonal_stats(
@@ -179,7 +179,7 @@ class Extract:
                         )
 
             for lead_time, pcode in itertools.product(
-                range(1, 8), list(country_gdf[f"adm{adm_level}_pcode"].unique())
+                range(0, 8), list(country_gdf[f"adm{adm_level}_pcode"].unique())
             ):
                 key = f"{pcode}_{lead_time}"
                 self.data.discharge_admin.upsert_data_unit(
@@ -210,10 +210,10 @@ class Extract:
                         station_code=station_code
                     )  # get station information from preloaded thresholds
                     coords = [(float(station.lon), float(station.lat))]
-                    for lead_time in range(1, 8):
+                    for lead_time in range(0, 8):
                         # Extract data for stations
                         discharge = float(
-                            [x[0] for x in src.sample(coords, indexes=lead_time)][0]
+                            [x[0] for x in src.sample(coords, indexes=lead_time + 1)][0]
                         )
                         key = f"{station.station_code}_{lead_time}"
                         if key not in discharges_stations.keys():
@@ -226,7 +226,7 @@ class Extract:
             station = self.data.threshold_station.get_data_unit(
                 station_code=station_code
             )
-            for lead_time in range(1, 8):
+            for lead_time in range(0, 8):
                 key = f"{station_code}_{lead_time}"
                 self.data.discharge_station.upsert_data_unit(
                     DischargeStationDataUnit(
