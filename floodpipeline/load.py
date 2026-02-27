@@ -839,3 +839,24 @@ class Load:
                 raise FileNotFoundError(
                     f"File {blob_path} not found in Azure Blob Storage"
                 )
+
+    def list_blobs_in_path(self, blob_path_prefix: str):
+        """List all blob files under a given path/prefix in the container."""
+        blob_service_client = BlobServiceClient.from_connection_string(
+            f"DefaultEndpointsProtocol=https;"
+            f'AccountName={self.secrets.get_secret("BLOB_ACCOUNT_NAME")};'
+            f'AccountKey={self.secrets.get_secret("BLOB_ACCOUNT_KEY")};'
+            f"EndpointSuffix=core.windows.net"
+        )
+        container = self.settings.get_setting("blob_container")
+        container_client = blob_service_client.get_container_client(container)
+        blob_list = container_client.list_blobs(name_starts_with=blob_path_prefix)
+        return [blob.name for blob in blob_list]
+
+    def get_all_from_blob(self, local_dir: str, blob_path_prefix: str):
+        """Download all files from a blob path/prefix to a local directory."""
+        os.makedirs(local_dir, exist_ok=True)
+        blob_names = self.list_blobs_in_path(blob_path_prefix)
+        for blob_name in blob_names:
+            local_path = os.path.join(local_dir, os.path.basename(blob_name))
+            self.get_from_blob(local_path, blob_name)

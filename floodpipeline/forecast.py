@@ -15,7 +15,11 @@ import pandas as pd
 from rasterstats import zonal_stats
 import os
 import numpy as np
+import xarray as xr
 import rasterio
+import math
+from rasterio.transform import from_origin
+from rasterio.warp import reproject, Resampling, transform_bounds
 from rasterio.merge import merge
 from rasterio.mask import mask
 from rasterio.features import shapes
@@ -328,6 +332,7 @@ class Forecast:
             flood_rasters[rp] = flood_raster_filepath
 
         # create empty raster
+        # self.__create_empty_raster(flood_rasters)
         empty_raster = self.flood_extent_raster.replace(".tif", "_empty.tif")
         with rasterio.open(list(flood_rasters.values())[0]) as src:
             flood_raster_data = src.read()
@@ -338,6 +343,7 @@ class Forecast:
                 dest.write(flood_raster_data)
 
         adm_lvl = self.data.forecast_admin.adm_levels[-1]
+
         # get adm boundaries
         gdf_adm = self.load.get_adm_boundaries(
             self.data.forecast_admin.country, adm_lvl
@@ -349,6 +355,25 @@ class Forecast:
             raster_lead_time = self.flood_extent_raster.replace(
                 ".tif", f"_{lead_time}.tif"
             )
+
+            # PHL specific: get additional local flood extent
+            if country.upper() == "PHL":
+
+                # Get Delft-FEWS flood extent raster file
+                today = datetime.today().strftime("%Y%m%d")
+                local_flood_extent_files_path = (
+                    self.input_data_path + f"/deltares"
+                )
+                if not os.path.exists(local_flood_extent_files_path):
+                    self.load.get_all_from_blob(
+                        local_flood_extent_files_path,
+                        f"{self.settings.get_setting('blob_storage_path')}"
+                        f"/flood-maps/{country.upper()}/deltares/{today}/{today}_sfincs_output*_.nc",
+                    )
+
+                # Extract Delft-FEWS flood extent based on lead time
+                flood_extent_filepath = self.__filter_delft_fews_lead_time(local_flood_extent_files_path)
+                flood_rasters["delft-fews"] = flood_extent_filepath
 
             # calculate flood extent for each triggered admin division
             flood_rasters_admin_div = []
@@ -363,9 +388,19 @@ class Forecast:
                     if rp not in flood_rasters.keys():
                         rp = min(flood_rasters.keys())
 
+                    # PHL specific: merge global flood extent raster and local Delft-FEWS flood extent raster
+                    # other countries: directly clip global flood extent raster
+                    if country.upper() == "PHL":
+                        flood_raster = self.__merge_all_flood_extents(
+                            flood_rasters[rp],
+                            flood_rasters["delft-fews"],
+                        )
+                    else:
+                        flood_raster = flood_rasters[rp]
+
                     # clip flood extent raster with admin division boundaries
                     flood_raster_data, flood_raster_meta = clip_raster(
-                        flood_rasters[rp], [adm_bounds]
+                        flood_raster, [adm_bounds]
                     )
                     # save the clipped raster
                     flood_raster_admin_div = (
@@ -604,3 +639,135 @@ class Forecast:
                 alert_class=alert_class,
             )
             self.data.forecast_station.upsert_data_unit(forecast_data_unit)
+
+    def __create_empty_raster(self, flood_rasters: dict) -> None:
+        # create empty raster from flood extent raster
+        empty_raster = self.flood_extent_raster.replace(".tif", "_empty.tif")
+        with rasterio.open(list(flood_rasters.values())[0]) as src:
+            flood_raster_data = src.read()
+            flood_raster_data = np.empty(flood_raster_data.shape)
+            flood_raster_meta = src.meta.copy()
+            flood_raster_meta["compress"] = "lzw"
+            with rasterio.open(empty_raster, "w", **flood_raster_meta) as dest:
+                dest.write(flood_raster_data)
+
+    def __filter_delft_fews_lead_time(
+            self, 
+            nc_filepath: str, 
+            lead_time: int
+        ) -> str:
+        """
+        - Filter Delft-FEWS netCDF file with given lead time
+        - Reproject from projected EPSG:32651 (WGS 84 / UTM zone 51N) specified 
+        by Delft-FEWS model to the same generic coordinate EPSG:3857 with other 
+        data.
+        """
+
+        ds = xr.open_dataset(nc_filepath)
+        ds_lead_time = ds["H"].isel(time=lead_time)
+        ds_lead_time_proj = ds_lead_time.rio.reproject("EPSG:3857")
+        
+        output_filepath = nc_filepath.replace(".nc", f"_{lead_time}.tif")
+        ds_lead_time_proj.rio.to_raster(output_filepath)
+
+        return output_filepath
+
+    def __merge_all_flood_extents(
+            self, 
+            global_flood_extent,
+            local_flood_extents,
+            resolution="global",  # "global" or "local"
+        ) -> str:
+        """
+        Merge global flood extent raster and local Delft-FEWS flood extent rasters
+        into a single one:
+        - If resolution is "global", use the global flood extent raster's resolution as final resolution
+        - If resolution is "local", use local flood extent raster instead
+        Then save the merged raster.
+        """
+
+        if resolution not in ["global", "local"]:
+            raise ValueError("resolution must be 'global' or 'local'")
+
+        all_flood_extents = [global_flood_extent] + local_flood_extents
+
+        # Determine target CRS and resolution
+        with rasterio.open(global_flood_extent) as src_global:
+            global_crs = src_global.crs
+            global_res = src_global.res
+            global_nodata = src_global.nodata
+
+        if resolution == "global":  # use resolution of global raster
+            target_crs = global_crs
+            target_res_x, target_res_y = global_res
+        elif resolution == "local":  # use resolution of Deltares raster
+            with rasterio.open(local_flood_extents[0]) as src_local:
+                target_crs = src_local.crs
+                target_res_x, target_res_y = src_local.res
+
+        # Compute UNION extent of flood raster
+        all_bounds = []
+
+        for file in all_flood_extents:
+            with rasterio.open(file) as src:
+                bounds = transform_bounds(
+                    src.crs, target_crs, *src.bounds
+                )
+                all_bounds.append(bounds)
+
+        xmin = min(b[0] for b in all_bounds)
+        ymin = min(b[1] for b in all_bounds)
+        xmax = max(b[2] for b in all_bounds)
+        ymax = max(b[3] for b in all_bounds)
+
+        # Build output raster grid
+        width = math.ceil((xmax - xmin) / target_res_x)
+        height = math.ceil((ymax - ymin) / abs(target_res_y))
+
+        transform = from_origin(xmin, ymax, target_res_x, abs(target_res_y))
+
+        result = np.full((height, width), np.nan, dtype=np.float32)
+
+        # Fill flood depth values over no-data
+        for file in all_flood_extents:
+            with rasterio.open(file) as src:
+                temp = np.full((height, width), np.nan, dtype=np.float32)
+
+                reproject(
+                    source=rasterio.band(src, 1),
+                    destination=temp,
+                    src_transform=src.transform,
+                    src_crs=src.crs,
+                    dst_transform=transform,
+                    dst_crs=target_crs,
+                    dst_width=width,
+                    dst_height=height,
+                    resampling=Resampling.nearest
+                )
+
+                if src.nodata is not None:
+                    temp[temp == src.nodata] = np.nan
+
+                result = np.where(np.isnan(result), temp, result)
+
+        # Handle nodata
+        # if global_nodata is None:
+        #     global_nodata = -9999
+        result[np.isnan(result)] = global_nodata
+
+        profile = {
+            "driver": "GTiff",
+            "height": height,
+            "width": width,
+            "count": 1,
+            "dtype": "float32",
+            "crs": target_crs,
+            "transform": transform,
+            "nodata": global_nodata
+        }
+
+        output_path = global_flood_extent.replace(".tif", f"_delft_fews.tif")
+        with rasterio.open(output_path, "w", **profile) as dst:
+            dst.write(result, 1)
+
+        return output_path
