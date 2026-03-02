@@ -810,27 +810,31 @@ class Load:
             )
         return datasets[-1]
 
-    def __get_blob_service_client(self, blob_path: str):
-        """Get service client for Azure Blob Storage"""
+    def __get_blob_service_client(self):
         blob_service_client = BlobServiceClient.from_connection_string(
             f"DefaultEndpointsProtocol=https;"
             f'AccountName={self.secrets.get_secret("BLOB_ACCOUNT_NAME")};'
             f'AccountKey={self.secrets.get_secret("BLOB_ACCOUNT_KEY")};'
             f"EndpointSuffix=core.windows.net"
         )
+        return blob_service_client
+
+    def __get_blob_client(self, blob_path: str):
+        """Get service client for Azure Blob Storage"""
+        blob_service_client = self.__get_blob_service_client()
         container = self.settings.get_setting("blob_container")
         return blob_service_client.get_blob_client(container=container, blob=blob_path)
 
     def save_to_blob(self, local_path: str, file_dir_blob: str):
         """Save file to Azure Blob Storage"""
         # upload to Azure Blob Storage
-        blob_client = self.__get_blob_service_client(file_dir_blob)
+        blob_client = self.__get_blob_client(file_dir_blob)
         with open(local_path, "rb") as upload_file:
             blob_client.upload_blob(upload_file, overwrite=True)
 
     def get_from_blob(self, local_path: str, blob_path: str):
         """Get file from Azure Blob Storage"""
-        blob_client = self.__get_blob_service_client(blob_path)
+        blob_client = self.__get_blob_client(blob_path)
 
         with open(local_path, "wb") as download_file:
             try:
@@ -840,14 +844,9 @@ class Load:
                     f"File {blob_path} not found in Azure Blob Storage"
                 )
 
-    def list_blobs_in_path(self, blob_path_prefix: str):
+    def __list_blobs_in_path(self, blob_path_prefix: str):
         """List all blob files under a given path/prefix in the container."""
-        blob_service_client = BlobServiceClient.from_connection_string(
-            f"DefaultEndpointsProtocol=https;"
-            f'AccountName={self.secrets.get_secret("BLOB_ACCOUNT_NAME")};'
-            f'AccountKey={self.secrets.get_secret("BLOB_ACCOUNT_KEY")};'
-            f"EndpointSuffix=core.windows.net"
-        )
+        blob_service_client = self.__get_blob_service_client()
         container = self.settings.get_setting("blob_container")
         container_client = blob_service_client.get_container_client(container)
         blob_list = container_client.list_blobs(name_starts_with=blob_path_prefix)
@@ -856,7 +855,13 @@ class Load:
     def get_all_from_blob(self, local_dir: str, blob_path_prefix: str):
         """Download all files from a blob path/prefix to a local directory."""
         os.makedirs(local_dir, exist_ok=True)
-        blob_names = self.list_blobs_in_path(blob_path_prefix)
+        blob_names = self.__list_blobs_in_path(blob_path_prefix)
         for blob_name in blob_names:
-            local_path = os.path.join(local_dir, os.path.basename(blob_name))
+            local_path = os.path.join(local_dir, blob_name.split("/")[-1])
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
             self.get_from_blob(local_path, blob_name)
+
+        if len(blob_names) == 0:
+            raise FileNotFoundError(
+                f"No files found in Azure Blob Storage with prefix {blob_path_prefix}"
+            )
