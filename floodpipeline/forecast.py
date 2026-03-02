@@ -333,7 +333,6 @@ class Forecast:
             flood_rasters[rp] = flood_raster_filepath
 
         # create empty raster
-        # self.__create_empty_raster(flood_rasters)
         empty_raster = self.flood_extent_raster.replace(".tif", "_empty.tif")
         with rasterio.open(list(flood_rasters.values())[0]) as src:
             flood_raster_data = src.read()
@@ -644,17 +643,6 @@ class Forecast:
             )
             self.data.forecast_station.upsert_data_unit(forecast_data_unit)
 
-    def __create_empty_raster(self, flood_rasters: dict) -> None:
-        # create empty raster from flood extent raster
-        empty_raster = self.flood_extent_raster.replace(".tif", "_empty.tif")
-        with rasterio.open(list(flood_rasters.values())[0]) as src:
-            flood_raster_data = src.read()
-            flood_raster_data = np.empty(flood_raster_data.shape)
-            flood_raster_meta = src.meta.copy()
-            flood_raster_meta["compress"] = "lzw"
-            with rasterio.open(empty_raster, "w", **flood_raster_meta) as dest:
-                dest.write(flood_raster_data)
-
     def __filter_delft_fews_lead_time(
             self, 
             path_to_nc_dir: str,
@@ -768,9 +756,6 @@ class Forecast:
 
                 result = np.where(np.isnan(result), temp, result)
 
-        # Handle nodata
-        # if global_nodata is None:
-        #     global_nodata = -9999
         result[np.isnan(result)] = global_nodata
 
         profile = {
