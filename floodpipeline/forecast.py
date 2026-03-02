@@ -682,8 +682,8 @@ class Forecast:
 
     def __merge_all_flood_extents(
             self, 
-            global_flood_extent,
-            local_flood_extents,
+            global_flood_extent: str,
+            local_flood_extents: list[str],
             resolution="global",  # "global" or "local"
         ) -> str:
         """
@@ -692,6 +692,9 @@ class Forecast:
         - If resolution is "global", use the global flood extent raster's resolution as final resolution
         - If resolution is "local", use local flood extent raster instead
         Then save the merged raster.
+
+        global_flood_extent: file path to global flood extent raster
+        local_flood_extents: list of file paths to local flood extent rasters
         """
 
         if resolution not in ["global", "local"]:
