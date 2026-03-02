@@ -360,15 +360,17 @@ class Forecast:
             if country.upper() == "PHL":
 
                 # Get Delft-FEWS flood extent raster file
-                today = datetime.today().strftime("%Y%m%d")
+                # today = datetime.today().strftime("%Y%m%d")
+                today = "20260225"  # for testing purposes, to be removed later
                 local_flood_extent_files_path = (
-                    self.input_data_path + f"/deltares"
+                    self.input_data_path + f"/delft-fews"
                 )
                 if not os.path.exists(local_flood_extent_files_path):
                     self.load.get_all_from_blob(
                         local_flood_extent_files_path,
                         f"{self.settings.get_setting('blob_storage_path')}"
-                        f"/flood-maps/{country.upper()}/deltares/{today}/{today}_sfincs_output*_.nc",
+                        # f"/flood-maps/{country.upper()}/delft-fews/{today}/{today}_sfincs_output_",
+                        f"/flood-maps/{country.upper()}/delft-fews/{today}/sfincs_output_",   # for testing purposes, to be removed later
                     )
 
                 # Extract Delft-FEWS flood extent based on lead time
