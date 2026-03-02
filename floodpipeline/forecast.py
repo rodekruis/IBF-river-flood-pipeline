@@ -17,6 +17,7 @@ import os
 import numpy as np
 import xarray as xr
 import rasterio
+import rioxarray
 import math
 from rasterio.transform import from_origin
 from rasterio.warp import reproject, Resampling, transform_bounds
@@ -372,7 +373,10 @@ class Forecast:
                     )
 
                 # Extract Delft-FEWS flood extent based on lead time
-                flood_extent_filepath = self.__filter_delft_fews_lead_time(local_flood_extent_files_path)
+                flood_extent_filepath = self.__filter_delft_fews_lead_time(
+                    local_flood_extent_files_path,
+                    lead_time
+                )
                 flood_rasters["delft-fews"] = flood_extent_filepath
 
             # calculate flood extent for each triggered admin division
@@ -653,24 +657,38 @@ class Forecast:
 
     def __filter_delft_fews_lead_time(
             self, 
-            nc_filepath: str, 
+            path_to_nc_dir: str,
             lead_time: int
-        ) -> str:
+        ) -> list[str]:
         """
         - Filter Delft-FEWS netCDF file with given lead time
         - Reproject from projected EPSG:32651 (WGS 84 / UTM zone 51N) specified 
         by Delft-FEWS model to the same generic coordinate EPSG:3857 with other 
         data.
+
+        path_to_nc_dir: directory path to Delft-FEWS netCDF files
+        lead_time: lead time to filter the netCDF files, in hours
         """
 
-        ds = xr.open_dataset(nc_filepath)
-        ds_lead_time = ds["H"].isel(time=lead_time)
-        ds_lead_time_proj = ds_lead_time.rio.reproject("EPSG:3857")
-        
-        output_filepath = nc_filepath.replace(".nc", f"_{lead_time}.tif")
-        ds_lead_time_proj.rio.to_raster(output_filepath)
+        paths_to_nc_files = [
+            os.path.join(path_to_nc_dir, f)
+            for f in os.listdir(path_to_nc_dir)
+            if f.endswith(".nc")
+        ]
 
-        return output_filepath
+        paths_to_tif = []
+        for nc_filepath in paths_to_nc_files:
+            ds = xr.open_dataset(nc_filepath)
+            ds = ds.rio.write_crs("EPSG:32651")  # Deltares model CRS
+
+            ds_lead_time = ds["H"].isel(time=lead_time)
+            ds_lead_time_proj = ds_lead_time.rio.reproject("EPSG:4326")
+            
+            output_filepath = nc_filepath.replace(".nc", f"_{lead_time}.tif")
+            ds_lead_time_proj.rio.to_raster(output_filepath)
+            paths_to_tif.append(output_filepath)
+
+        return paths_to_tif
 
     def __merge_all_flood_extents(
             self, 
