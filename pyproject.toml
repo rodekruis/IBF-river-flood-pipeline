@@ -32,6 +32,8 @@ rasterstats = "*"
 SQLAlchemy = "*"
 tqdm = "*"
 xarray = "*"
+lxml = "^6.0.2"
+rioxarray = "^0.19"
 
 [build-system]
 requires = ["poetry-core"]
