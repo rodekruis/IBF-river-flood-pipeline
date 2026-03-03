@@ -852,16 +852,89 @@ class Load:
         blob_list = container_client.list_blobs(name_starts_with=blob_path_prefix)
         return [blob.name for blob in blob_list]
 
+    def __list_directories_in_path(self, blob_path_prefix: str):
+        """List unique directories under a given blob path/prefix."""
+        # Ensure prefix ends with / for consistent parsing
+        if not blob_path_prefix.endswith("/"):
+            blob_path_prefix = blob_path_prefix + "/"
+        
+        blob_names = self.__list_blobs_in_path(blob_path_prefix)
+        directories = set()
+        
+        for blob_name in blob_names:
+            if blob_name.startswith(blob_path_prefix):
+                relative_path = blob_name[len(blob_path_prefix):]
+                parts = relative_path.split("/")
+                if parts[0]:  # Get the first directory level
+                    directories.add(parts[0])
+        
+        return sorted(list(directories))
+
     def get_all_from_blob(self, local_dir: str, blob_path_prefix: str):
         """Download all files from a blob path/prefix to a local directory."""
         os.makedirs(local_dir, exist_ok=True)
         blob_names = self.__list_blobs_in_path(blob_path_prefix)
+
+        # if len(blob_names) == 0:
+        #     # Fallback: find most recent date folder and try again
+        #     parent_path = "/".join(blob_path_prefix.rstrip("/").split("/")[:-2]) + "/"
+        #     most_recent_dir = self.__get_most_recent_dir(parent_path)
+        #     # Build new prefix and list blobs again
+        #     new_prefix = parent_path + most_recent_dir + "/" + most_recent_dir + "_sfincs_output_"
+        #     blob_names = self.__list_blobs_in_path(new_prefix)
+        #     if len(blob_names) == 0:
+        #         raise FileNotFoundError(
+        #             f"No files found in Azure Blob Storage with prefix {blob_path_prefix} or fallback {new_prefix}"
+        #         )
+
         for blob_name in blob_names:
             local_path = os.path.join(local_dir, blob_name.split("/")[-1])
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
             self.get_from_blob(local_path, blob_name)
 
-        if len(blob_names) == 0:
+    def __get_most_recent_dir(self, blob_path_prefix: str):
+        """Get the most recent date folder under a given blob path/prefix."""
+        directories = self.__list_directories_in_path(blob_path_prefix)
+        
+        # Filter for valid date folders (YYYYMMDD format)
+        date_folders = []
+        for dir_name in directories:
+            try:
+                datetime.strptime(dir_name, "%Y%m%d")
+                date_folders.append(dir_name)
+            except ValueError:
+                pass  # Not a valid date folder, skip
+        
+        if not date_folders:
             raise FileNotFoundError(
-                f"No files found in Azure Blob Storage with prefix {blob_path_prefix}"
+                f"No date folders found in Azure Blob Storage with prefix {blob_path_prefix}"
+            )
+        
+        return sorted(date_folders)[-1]
+
+    def get_all_from_blob_with_fallback(self, local_dir: str, country: str, today: str, blob_storage_path: str):
+        """
+        Download blobs for 'today' if available, otherwise fallback to the most recent date folder.
+        """
+        base_path = f"{blob_storage_path}/flood-maps/{country.upper()}/delft-fews"
+        blob_dir = today
+        blob_prefix = f"{blob_dir}_sfincs_output_"
+        try:
+            self.get_all_from_blob(
+                local_dir,
+                f"{base_path}/{blob_dir}/{blob_prefix}"
+            )
+        except FileNotFoundError:
+            # Find most recent date folder
+            blob_dir = self.__get_most_recent_dir(base_path)
+            
+            logging.warning(
+                f"Blobs for {today} not found."
+                f"Falling back to most recent date folder {blob_dir}."
+            )
+
+            blob_prefix = f"{blob_dir}_sfincs_output_"
+            self.get_all_from_blob(
+                local_dir,
+                f"{base_path}/{blob_dir}/{blob_prefix}"
             )
