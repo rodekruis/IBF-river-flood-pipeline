@@ -644,7 +644,7 @@ class Forecast:
 
     def __filter_delft_fews_lead_time(
             self, 
-            path_to_nc_dir: str,
+            local_flood_extent_dir: str,
             lead_time: int
         ) -> list[str]:
         """
@@ -653,13 +653,13 @@ class Forecast:
         by Delft-FEWS model to the same generic coordinate EPSG:3857 with other 
         data.
 
-        path_to_nc_dir: directory path to Delft-FEWS netCDF files
+        local_flood_extent_dir: directory path to Delft-FEWS netCDF files
         lead_time: lead time to filter the netCDF files, in hours
         """
 
         paths_to_nc_files = [
-            os.path.join(path_to_nc_dir, f)
-            for f in os.listdir(path_to_nc_dir)
+            os.path.join(local_flood_extent_dir, f)
+            for f in os.listdir(local_flood_extent_dir)
             if f.endswith(".nc")
         ]
 
