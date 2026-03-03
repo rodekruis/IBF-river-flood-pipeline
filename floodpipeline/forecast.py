@@ -668,7 +668,10 @@ class Forecast:
             ds = xr.open_dataset(nc_filepath)
             ds = ds.rio.write_crs("EPSG:32651")  # Deltares model CRS
 
+            # select lead time
             ds_lead_time = ds["H"].isel(time=lead_time)
+
+            # reproject to generic CRS
             ds_lead_time_proj = ds_lead_time.rio.reproject("EPSG:4326")
             
             output_filepath = nc_filepath.replace(".nc", f"_{lead_time}.tif")
