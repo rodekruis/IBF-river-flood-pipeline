@@ -345,8 +345,6 @@ class Forecast:
         # PHL specific: get additional local flood extent
         if country.upper() == "PHL":
             # Get Delft-FEWS flood extent raster file
-            # today = datetime.today().strftime("%Y%m%d")
-            today = "20260225"  # for testing purposes, to be removed later
             local_flood_extent_dir = (
                 self.input_data_path + f"/delft-fews"
             )
@@ -354,8 +352,7 @@ class Forecast:
                 self.load.get_all_from_blob(
                     local_flood_extent_dir,
                     f"{self.settings.get_setting('blob_storage_path')}"
-                    # f"/flood-maps/{country.upper()}/delft-fews/{today}/{today}_sfincs_output_",
-                    f"/flood-maps/{country.upper()}/delft-fews/{today}/sfincs_output_",   # for testing purposes, to be removed later
+                    f"/flood-maps/{country.upper()}/delft-fews"
                 )
 
         adm_lvl = self.data.forecast_admin.adm_levels[-1]
