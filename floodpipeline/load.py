@@ -902,11 +902,13 @@ class Load:
 
     def __fetch_flood_maps_blob_paths(self, blob_base_path: str):
         """
-        Download blobs for 'today' if available, otherwise download to the most recent date folder.
+        Download blobs file with prefix <today-date> in <today-date> directory.
+        If such combination is not available, download to the most recent date folder.
         """
         today = datetime.today().strftime("%Y%m%d")
+        fixed_part = "0000_SFINCS_"
 
-        blob_prefix = f"{today}_sfincs_output_"
+        blob_prefix = f"{today}{fixed_part}"
         blob_path_prefix = f"{blob_base_path}/{today}/{blob_prefix}"
         blob_names = self.__list_blobs_in_path(blob_path_prefix)
 
@@ -917,7 +919,7 @@ class Load:
                 f"Blobs for today {today} not found. "
                 f"Falling back to most recent date folder {most_recent_date}."
             )
-            blob_prefix = f"{most_recent_date}_sfincs_output_"
+            blob_prefix = f"{most_recent_date}{fixed_part}"
             blob_path_prefix = f"{blob_base_path}/{most_recent_date}/{blob_prefix}"
             blob_names = self.__list_blobs_in_path(blob_path_prefix)
         
