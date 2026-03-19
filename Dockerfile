@@ -1,4 +1,10 @@
 FROM python:3.11-slim
+# Install system dependencies for python's rasterio and gdal packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libexpat1 \
+    libgdal-dev \
+    gdal-bin \
+    && rm -rf /var/lib/apt/lists/*
 RUN pip install poetry
 
 WORKDIR .
