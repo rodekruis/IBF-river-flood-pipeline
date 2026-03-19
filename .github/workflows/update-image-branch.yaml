@@ -1,4 +1,4 @@
-name: Update pipeline test ${{ github.ref_name }}
+name: Update pipeline test branches
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
   
 jobs:
   build:
-    name: Build and push container image
+    name: Build and push container image for ${{ github.ref_name }}
     runs-on: ubuntu-latest
     steps:
     - name: Checkout repository
