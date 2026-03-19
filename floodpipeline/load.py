@@ -888,7 +888,7 @@ class Load:
         date_folders = []
         for dir_name in directories:
             try:
-                datetime.strptime(dir_name, "%Y%m%d")
+                datetime.strptime(dir_name, "%Y%m%d0000")
                 date_folders.append(dir_name)
             except ValueError:
                 pass  # Not a valid date folder, skip
@@ -905,7 +905,7 @@ class Load:
         Download blobs file with prefix <today-date> in <today-date> directory.
         If such combination is not available, download to the most recent date folder.
         """
-        today = datetime.today().strftime("%Y%m%d")
+        today = datetime.today().strftime("%Y%m%d0000")
         fixed_part = "0000_SFINCS_"
 
         blob_prefix = f"{today}{fixed_part}"
@@ -916,7 +916,7 @@ class Load:
             # Find most recent date folder
             most_recent_date = self.__find_most_recent_dir(blob_base_path)
             logging.warning(
-                f"Blobs for today {today} not found. "
+                f"Flood map blobs for today {today} not found. "
                 f"Falling back to most recent date folder {most_recent_date}."
             )
             blob_prefix = f"{most_recent_date}{fixed_part}"
