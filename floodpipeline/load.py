@@ -880,15 +880,15 @@ class Load:
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
             self.get_from_blob(local_path, blob_name)
 
-    def __find_most_recent_dir(self, blob_path_prefix: str):
+    def __find_most_recent_dir(self, blob_path_prefix: str, datetime_format: str = "%Y%m%d0000"):
         """Find the most recent date folder under a given blob path/prefix."""
         directories = self.__list_directories_in_path(blob_path_prefix)
         
-        # Filter for valid date folders (YYYYMMDD format)
+        # Filter for valid date folders (datetime_format)
         date_folders = []
         for dir_name in directories:
             try:
-                datetime.strptime(dir_name, "%Y%m%d0000")
+                datetime.strptime(dir_name, datetime_format)
                 date_folders.append(dir_name)
             except ValueError:
                 pass  # Not a valid date folder, skip
@@ -902,11 +902,12 @@ class Load:
 
     def __fetch_flood_maps_blob_paths(self, blob_base_path: str):
         """
-        Download blobs file with prefix <today-date> in <today-date> directory.
+        Download flood map blobs file with prefix <today-datetime> in <today-datetime> directory.
         If such combination is not available, download to the most recent date folder.
         """
-        today = datetime.today().strftime("%Y%m%d0000")
-        fixed_part = "0000_SFINCS_"
+        datetime_format = "%Y%m%d0000"  #202603200000
+        today = datetime.today().strftime(datetime_format)
+        fixed_part = "_SFINCS_"
 
         blob_prefix = f"{today}{fixed_part}"
         blob_path_prefix = f"{blob_base_path}/{today}/{blob_prefix}"
@@ -914,7 +915,7 @@ class Load:
 
         if len(blob_names) == 0:
             # Find most recent date folder
-            most_recent_date = self.__find_most_recent_dir(blob_base_path)
+            most_recent_date = self.__find_most_recent_dir(blob_base_path, datetime_format)
             logging.warning(
                 f"Flood map blobs for today {today} not found. "
                 f"Falling back to most recent date folder {most_recent_date}."
