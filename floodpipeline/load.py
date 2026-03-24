@@ -144,8 +144,11 @@ class Load:
 
     def get_population_density(self, country: str, file_path: str):
         """Get population density data from worldpop and save to file_path"""
-        URL = self.settings.get_setting("worldpop_url").replace("???", country.upper())
-        r = requests.get(f"{URL}/{country.lower()}_pop_2026_CN_100m_R2025A_v1.tif")
+        URL = self.settings.get_setting("worldpop_url").replace(
+            "<countryCodeUpper>", country.upper()
+        )
+        URL = URL.replace("<countryCodeLower>", country.lower())
+        r = requests.get(f"{URL}")
         if "404 Not Found" in str(r.content):
             raise FileNotFoundError(
                 f"Population density data not found for country {country}"
