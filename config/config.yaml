@@ -8,7 +8,8 @@ floods:
   glofas_threshold_files: flood_threshold_glofas_v4_rl
 
 auxiliary:
-  worldpop_url: https://data.worldpop.org/GIS/Population/Global_2021_2022_1km_UNadj/constrained/2022
+  worldpop_url: https://data.worldpop.org/GIS/Population/Global_2015_2030/R2025A/2026/<countryCodeUpper>/v1/100m/constrained/<countryCodeLower>_pop_2026_CN_100m_R2025A_v1.tif
+  
 
 databases:
   blob_container: ibfdatapipelines
