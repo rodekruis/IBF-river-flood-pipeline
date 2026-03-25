@@ -812,27 +812,31 @@ class Load:
             )
         return datasets[-1]
 
-    def __get_blob_service_client(self, blob_path: str):
-        """Get service client for Azure Blob Storage"""
+    def __get_blob_service_client(self):
         blob_service_client = BlobServiceClient.from_connection_string(
             f"DefaultEndpointsProtocol=https;"
             f'AccountName={self.secrets.get_secret("BLOB_ACCOUNT_NAME")};'
             f'AccountKey={self.secrets.get_secret("BLOB_ACCOUNT_KEY")};'
             f"EndpointSuffix=core.windows.net"
         )
+        return blob_service_client
+
+    def __get_blob_client(self, blob_path: str):
+        """Get service client for Azure Blob Storage"""
+        blob_service_client = self.__get_blob_service_client()
         container = self.settings.get_setting("blob_container")
         return blob_service_client.get_blob_client(container=container, blob=blob_path)
 
     def save_to_blob(self, local_path: str, file_dir_blob: str):
         """Save file to Azure Blob Storage"""
         # upload to Azure Blob Storage
-        blob_client = self.__get_blob_service_client(file_dir_blob)
+        blob_client = self.__get_blob_client(file_dir_blob)
         with open(local_path, "rb") as upload_file:
             blob_client.upload_blob(upload_file, overwrite=True)
 
     def get_from_blob(self, local_path: str, blob_path: str):
         """Get file from Azure Blob Storage"""
-        blob_client = self.__get_blob_service_client(blob_path)
+        blob_client = self.__get_blob_client(blob_path)
 
         with open(local_path, "wb") as download_file:
             try:
@@ -841,3 +845,85 @@ class Load:
                 raise FileNotFoundError(
                     f"File {blob_path} not found in Azure Blob Storage"
                 )
+
+    def __list_blobs_in_path(self, blob_path_prefix: str):
+        """List all blob files under a given path/prefix in the container."""
+        blob_service_client = self.__get_blob_service_client()
+        container = self.settings.get_setting("blob_container")
+        container_client = blob_service_client.get_container_client(container)
+        blob_list = container_client.list_blobs(name_starts_with=blob_path_prefix)
+        return [blob.name for blob in blob_list]
+
+    def __list_directories_in_path(self, blob_path_prefix: str):
+        """List unique directories under a given blob path/prefix."""
+        # Ensure prefix ends with / for consistent parsing
+        if not blob_path_prefix.endswith("/"):
+            blob_path_prefix = blob_path_prefix + "/"
+        
+        blob_names = self.__list_blobs_in_path(blob_path_prefix)
+        directories = set()
+        
+        for blob_name in blob_names:
+            if blob_name.startswith(blob_path_prefix):
+                relative_path = blob_name[len(blob_path_prefix):]
+                parts = relative_path.split("/")
+                if parts[0]:  # Get the first directory level
+                    directories.add(parts[0])
+        
+        return sorted(list(directories))
+
+    def get_all_from_blob(self, local_dir: str, blob_base_path: str):
+        """Download all files from a blob path/prefix to a local directory."""
+        os.makedirs(local_dir, exist_ok=True)
+        blob_names = self.__fetch_flood_maps_blob_paths(blob_base_path)
+
+        for blob_name in blob_names:
+            local_path = os.path.join(local_dir, blob_name.split("/")[-1])
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            self.get_from_blob(local_path, blob_name)
+
+    def __find_most_recent_dir(self, blob_path_prefix: str, datetime_format: str = "%Y%m%d0000"):
+        """Find the most recent date folder under a given blob path/prefix."""
+        directories = self.__list_directories_in_path(blob_path_prefix)
+        
+        # Filter for valid date folders (datetime_format)
+        date_folders = []
+        for dir_name in directories:
+            try:
+                datetime.strptime(dir_name, datetime_format)
+                date_folders.append(dir_name)
+            except ValueError:
+                pass  # Not a valid date folder, skip
+        
+        if not date_folders:
+            raise FileNotFoundError(
+                f"No date folders found in Azure Blob Storage with prefix {blob_path_prefix}"
+            )
+        
+        return sorted(date_folders)[-1]
+
+    def __fetch_flood_maps_blob_paths(self, blob_base_path: str):
+        """
+        Download flood map blobs file with prefix <today-datetime> in <today-datetime> directory.
+        If such combination is not available, download to the most recent date folder.
+        """
+        datetime_format = "%Y%m%d0000"  #202603200000
+        today = datetime.today().strftime(datetime_format)
+        fixed_part = "_SFINCS_"
+
+        blob_prefix = f"{today}{fixed_part}"
+        blob_path_prefix = f"{blob_base_path}/{today}/{blob_prefix}"
+        blob_names = self.__list_blobs_in_path(blob_path_prefix)
+
+        if len(blob_names) == 0:
+            # Find most recent date folder
+            most_recent_date = self.__find_most_recent_dir(blob_base_path, datetime_format)
+            logging.warning(
+                f"Flood map blobs for today {today} not found. "
+                f"Falling back to most recent date folder {most_recent_date}."
+            )
+            blob_prefix = f"{most_recent_date}{fixed_part}"
+            blob_path_prefix = f"{blob_base_path}/{most_recent_date}/{blob_prefix}"
+            blob_names = self.__list_blobs_in_path(blob_path_prefix)
+        
+        return blob_names
