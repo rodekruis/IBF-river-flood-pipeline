@@ -185,14 +185,15 @@ class Load:
                     ],
                 )
                 break
-            except requests.exceptions.ConnectionError:
+            except requests.exceptions.ConnectionError as e:
+                last_error = e
                 attempt += 1
                 logging.warning(
                     "IBF API currently not available, trying again in 1 minute"
                 )
                 time.sleep(60)
         if not login_response:
-            raise ConnectionError("IBF API not available")
+            raise ConnectionError("IBF API not available") from last_error
         return login_response.json()["user"]["token"]
 
     def ibf_api_post_request(self, path, body=None, files=None):
