@@ -193,6 +193,7 @@ class Load:
                 )
                 time.sleep(60)
         if not login_response:
+            logging.error(f"IBF API not available after {no_attempts} attempts: {last_error}")
             raise ConnectionError("IBF API not available") from last_error
         return login_response.json()["user"]["token"]
 
