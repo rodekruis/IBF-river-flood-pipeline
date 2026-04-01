@@ -174,7 +174,7 @@ class Load:
         return gdf_adm_boundaries
 
     def __ibf_api_authenticate(self):
-        no_attempts, attempt, login_response = 5, 0, None
+        no_attempts, attempt, login_response, last_error = 5, 0, None, None
         while attempt < no_attempts:
             try:
                 login_response = requests.post(
@@ -185,14 +185,22 @@ class Load:
                     ],
                 )
                 break
-            except requests.exceptions.ConnectionError:
+            except requests.exceptions.ConnectionError as e:
+                last_error = e
                 attempt += 1
                 logging.warning(
                     "IBF API currently not available, trying again in 1 minute"
                 )
                 time.sleep(60)
-        if not login_response:
-            raise ConnectionError("IBF API not available")
+        
+        # catch case where API is not available after retries
+        if login_response is None:
+            logging.error(f"IBF API not available after {no_attempts} attempts: {last_error}")
+            raise ConnectionError("IBF API not available") from last_error
+        # catch case where API is reachable but returns error (e.g. wrong credentials)
+        if not login_response.ok:
+            logging.error(f"IBF API authentication failed: {login_response.status_code} {login_response.text}")
+            raise ConnectionError(f"IBF API authentication failed: {login_response.status_code} {login_response.text}")
         return login_response.json()["user"]["token"]
 
     def ibf_api_post_request(self, path, body=None, files=None):
