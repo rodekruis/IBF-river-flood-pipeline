@@ -385,10 +385,9 @@ class Forecast:
                     # PHL specific: merge global flood extent raster and local Delft-FEWS flood extent raster
                     # other countries: directly clip global flood extent raster
                     if country.upper() == "PHL":
-                        # Extract Delft-FEWS flood extent based on lead time
-                        flood_rasters_delft_fews = self.__filter_delft_fews_lead_time(
-                            local_flood_extent_dir,
-                            lead_time
+                        # Get the provided local Delft-FEWS/SFINCS flood extent rasters
+                        flood_rasters_delft_fews = self.__get_delft_fews_flood_extents(
+                            local_flood_extent_dir
                         )
                         flood_raster = self.__merge_all_flood_extents(
                             flood_rasters[rp],
@@ -639,43 +638,28 @@ class Forecast:
             )
             self.data.forecast_station.upsert_data_unit(forecast_data_unit)
 
-    def __filter_delft_fews_lead_time(
-            self, 
+    def __get_delft_fews_flood_extents(
+            self,
             local_flood_extent_dir: str,
-            lead_time: int
         ) -> list[str]:
         """
-        - Filter Delft-FEWS netCDF file with given lead time
-        - Reproject from projected EPSG:32651 (WGS 84 / UTM zone 51N) specified 
-        by Delft-FEWS model to the same generic coordinate EPSG:3857 with other 
-        data.
+        Collect the provided local Delft-FEWS/SFINCS flood extent GeoTIFF
+        files (static maps, no time dimension).
 
-        local_flood_extent_dir: directory path to Delft-FEWS netCDF files
-        lead_time: lead time to filter the netCDF files, in hours
+        local_flood_extent_dir: directory path to Delft-FEWS tif files
         """
 
-        paths_to_nc_files = [
+        paths_to_tif_files = [
             os.path.join(local_flood_extent_dir, f)
             for f in os.listdir(local_flood_extent_dir)
-            if f.endswith(".nc")
+            if f.endswith(".tif")
         ]
+        if len(paths_to_tif_files) == 0:
+            raise FileNotFoundError(
+                f"No Delft-FEWS tif files found in {local_flood_extent_dir}"
+            )
 
-        paths_to_tif = []
-        for nc_filepath in paths_to_nc_files:
-            ds = xr.open_dataset(nc_filepath)
-            ds = ds.rio.write_crs("EPSG:32651")  # Deltares model CRS
-
-            # select lead time
-            ds_lead_time = ds["H"].isel(time=lead_time)
-
-            # reproject to generic CRS
-            ds_lead_time_proj = ds_lead_time.rio.reproject("EPSG:4326")
-            
-            output_filepath = nc_filepath.replace(".nc", f"_{lead_time}.tif")
-            ds_lead_time_proj.rio.to_raster(output_filepath)
-            paths_to_tif.append(output_filepath)
-
-        return paths_to_tif
+        return paths_to_tif_files
 
     def __merge_all_flood_extents(
             self, 
@@ -704,6 +688,8 @@ class Forecast:
             global_crs = src_global.crs
             global_res = src_global.res
             global_nodata = src_global.nodata
+            if global_nodata is None:
+                global_nodata = 0.0
 
         if resolution == "global":  # use resolution of global raster
             target_crs = global_crs
@@ -753,7 +739,9 @@ class Forecast:
                     resampling=Resampling.nearest
                 )
 
-                if src.nodata is not None:
+                if src.nodata is not None and not (
+                    isinstance(src.nodata, float) and math.isnan(src.nodata)
+                ):
                     temp[temp == src.nodata] = np.nan
 
                 result = np.where(np.isnan(result), temp, result)
