@@ -117,9 +117,11 @@ class Load:
 
     def get_population_density(self, file_path: str):
         """Get population density data from worldpop and save to file_path"""
-        r = requests.get(
-            f"{self.settings.get_setting('worldpop_url')}/{self.country}/{self.country.lower()}_ppp_2022_1km_UNadj_constrained.tif"
+        URL = self.settings.get_setting("worldpop_url").replace(
+            "<countryCodeUpper>", country.upper()
         )
+        URL = URL.replace("<countryCodeLower>", country.lower())
+        r = requests.get(f"{URL}")
         if "404 Not Found" in str(r.content):
             raise FileNotFoundError(
                 f"Population density data not found for country {self.country}"
@@ -143,10 +145,7 @@ class Load:
         return gdf_adm_boundaries
 
     def __ibf_api_authenticate(self):
-        if self.login_token is not None:
-            return self.login_token
-
-        no_attempts, attempt, login_response = 5, 0, None
+        no_attempts, attempt, login_response, last_error = 5, 0, None, None
         while attempt < no_attempts:
             try:
                 login_url = self.secrets.get_secret("IBF_API_URL") + "user/login"
@@ -160,17 +159,23 @@ class Load:
                 )
                 logger.info(f"POST {login_url} {login_response.status_code}")
                 break
-            except requests.exceptions.ConnectionError:
+            except requests.exceptions.ConnectionError as e:
+                last_error = e
                 attempt += 1
                 logging.warning(
                     "IBF API currently not available, trying again in 1 minute"
                 )
                 time.sleep(60)
-        if not login_response:
-            raise ConnectionError("IBF API not available")
-
-        self.login_token = login_response.json()["user"]["token"]
-        return self.login_token
+        
+        # catch case where API is not available after retries
+        if login_response is None:
+            logging.error(f"IBF API not available after {no_attempts} attempts: {last_error}")
+            raise ConnectionError("IBF API not available") from last_error
+        # catch case where API is reachable but returns error (e.g. wrong credentials)
+        if not login_response.ok:
+            logging.error(f"IBF API authentication failed: {login_response.status_code} {login_response.text}")
+            raise ConnectionError(f"IBF API authentication failed: {login_response.status_code} {login_response.text}")
+        return login_response.json()["user"]["token"]
 
     def ibf_api_post_request(self, path, body=None, files=None):
         token = self.__ibf_api_authenticate()
@@ -276,7 +281,7 @@ class Load:
 
             # determine events
             events = {}
-            for lead_time in range(1, 8):
+            for lead_time in range(0, 8):
                 if (
                     forecast_station_data.get_data_unit(
                         station_code, lead_time
@@ -284,7 +289,7 @@ class Load:
                     != "no"
                 ):
                     events[lead_time] = "alert"
-            for lead_time in range(1, 8):
+            for lead_time in range(0, 8):
                 if forecast_station_data.get_data_unit(
                     station_code, lead_time
                 ).triggered:
@@ -293,6 +298,7 @@ class Load:
             if not events:
                 continue
             events = dict(sorted(events.items()))
+            last_event_type, last_event_lead_time = "", 0
 
             for lead_time_event, event_type in events.items():
 
@@ -305,6 +311,15 @@ class Load:
                 event_name = str(station_name) if station_name else str(station_code)
                 if event_name == "" or event_name == "None" or event_name == "Na":
                     event_name = str(station_code)
+
+                # if already sent data for this event for a previous lead time, or severity is lower, break
+                if (
+                    event_type == last_event_type
+                    or (last_event_type == "trigger" and event_type == "alert")
+                ) and lead_time_event > last_event_lead_time:
+                    break
+                else:
+                    last_event_type, last_event_lead_time = event_type, lead_time_event
 
                 logging.info(
                     f"event {event_name}, type '{event_type}', lead time {lead_time_event}"
@@ -647,83 +662,158 @@ class Load:
             raise FileNotFoundError(
                 f"No station thresholds config file found for country {self.country}"
             )
-        with open(rf"config/{self.country}_station_thresholds.json", "r") as read_file:
-            station_thresholds = json.load(read_file)
-            for station in station_thresholds:
-                data_units.append(
-                    ThresholdStationDataUnit(
-                        station_code=station["station_code"],
-                        station_name=station["station_name"],
-                        lat=station["lat"],
-                        lon=station["lon"],
-                        pcodes=station["pcodes"],
-                        thresholds=station["thresholds"],
-                    )
-                )
-        dataset = StationDataSet(
-            country=self.country,
-            data_units=data_units,
+        client_ = cosmos_client.CosmosClient(
+            self.secrets.get_secret("COSMOS_URL"),
+            {"masterKey": self.secrets.get_secret("COSMOS_KEY")},
+            user_agent="ibf-flood-pipeline",
+            user_agent_overwrite=True,
         )
-        return dataset
-
-    def save_thresholds_station(self, data: List[ThresholdStationDataUnit]):
-        """Save GloFAS station thresholds to config file"""
-        # TBI validate before save
-        with open(rf"config/{self.country}_station_thresholds.json", "w") as file:
-            json.dump([record.__dict__ for record in data], file)
-
-    def get_thresholds_admin(self):
-        """Get GloFAS admin area thresholds from config file"""
-        data_units = []
-        if not os.path.exists(rf"config/{self.country}_admin_thresholds.json"):
-            raise FileNotFoundError(
-                f"No admin thresholds config file found for country {self.country}"
+        cosmos_db = client_.get_database_client("flood-pipeline")
+        cosmos_container_client = cosmos_db.get_container_client(data_type)
+        query = get_cosmos_query(
+            start_date, end_date, country, adm_level, pcode, lead_time
+        )
+        records_query = cosmos_container_client.query_items(
+            query=query,
+            enable_cross_partition_query=(
+                True if country is None else None
+            ),  # country must be the partition key
+        )
+        records = []
+        for record in records_query:
+            records.append(copy.deepcopy(record))
+        datasets = []
+        countries = list(set([record["country"] for record in records]))
+        timestamps = list(set([record["timestamp"] for record in records]))
+        for country in countries:
+            for timestamp in timestamps:
+                data_units = []
+                for record in records:
+                    if (
+                        record["country"] == country
+                        and record["timestamp"] == timestamp
+                    ):
+                        if data_type == "discharge":
+                            data_unit = DischargeDataUnit(
+                                adm_level=record["adm_level"],
+                                pcode=record["pcode"],
+                                lead_time=record["lead_time"],
+                                discharge_mean=record["discharge_mean"],
+                                discharge_ensemble=record["discharge_ensemble"],
+                            )
+                        elif data_type == "forecast":
+                            data_unit = ForecastDataUnit(
+                                adm_level=record["adm_level"],
+                                pcode=record["pcode"],
+                                lead_time=record["lead_time"],
+                                forecasts=record["forecasts"],
+                                pop_affected=record["pop_affected"],
+                                pop_affected_perc=record["pop_affected_perc"],
+                                triggered=record["triggered"],
+                                return_period=record["return_period"],
+                                alert_class=record["alert_class"],
+                            )
+                        elif data_type == "threshold":
+                            data_unit = ThresholdDataUnit(
+                                adm_level=record["adm_level"],
+                                pcode=record["pcode"],
+                                thresholds=record["thresholds"],
+                            )
+                        elif data_type == "discharge-station":
+                            data_unit = DischargeStationDataUnit(
+                                station_code=record["station_code"],
+                                station_name=record["station_name"],
+                                lat=record["lat"],
+                                lon=record["lon"],
+                                pcodes=record["pcodes"],
+                                lead_time=record["lead_time"],
+                                discharge_mean=record["discharge_mean"],
+                                discharge_ensemble=record["discharge_ensemble"],
+                            )
+                        elif data_type == "forecast-station":
+                            data_unit = ForecastStationDataUnit(
+                                station_code=record["station_code"],
+                                station_name=record["station_name"],
+                                lat=record["lat"],
+                                lon=record["lon"],
+                                pcodes=record["pcodes"],
+                                lead_time=record["lead_time"],
+                                forecasts=record["forecasts"],
+                                triggered=record["triggered"],
+                                return_period=record["return_period"],
+                                alert_class=record["alert_class"],
+                            )
+                        elif data_type == "threshold-station":
+                            data_unit = ThresholdStationDataUnit(
+                                station_code=record["station_code"],
+                                station_name=record["station_name"],
+                                lat=record["lat"],
+                                lon=record["lon"],
+                                pcodes=record["pcodes"],
+                                thresholds=record["thresholds"],
+                            )
+                        else:
+                            raise ValueError(f"Invalid data type {data_type}")
+                        data_units.append(data_unit)
+                if (
+                    data_type == "discharge"
+                    or data_type == "forecast"
+                    or data_type == "threshold"
+                ):
+                    adm_levels = list(
+                        set([data_unit.adm_level for data_unit in data_units])
+                    )
+                    dataset = AdminDataSet(
+                        country=country,
+                        timestamp=timestamp,
+                        adm_levels=adm_levels,
+                        data_units=data_units,
+                    )
+                    datasets.append(dataset)
+                else:
+                    dataset = StationDataSet(
+                        country=country,
+                        timestamp=timestamp,
+                        data_units=data_units,
+                    )
+                    datasets.append(dataset)
+        if len(datasets) == 0:
+            raise KeyError(
+                f"No datasets of type '{data_type}' found for country {country} in date range "
+                f"{start_date} - {end_date}."
             )
-        with open(rf"config/{self.country}_admin_thresholds.json", "r") as read_file:
-            admin_thresholds = json.load(read_file)
-            for record in admin_thresholds:
-                data_units.append(
-                    ThresholdDataUnit(
-                        adm_level=record["adm_level"],
-                        pcode=record["pcode"],
-                        thresholds=record["thresholds"],
-                    )
-                )
-        dataset = AdminDataSet(
-            country=self.country,
-            timestamp=datetime.now(),
-            data_units=data_units,
-        )
-        return dataset
+        elif len(datasets) > 1:
+            logging.warning(
+                f"Multiple datasets of type '{data_type}' found for country {country} in date range "
+                f"{start_date} - {end_date}; returning the latest (timestamp {datasets[-1].timestamp}). "
+            )
+        return datasets[-1]
 
-    def save_thresholds_admin(self, data: List[ThresholdDataUnit]):
-        """Save GloFAS admin area thresholds to config file"""
-        # TBI validate before save
-        with open(rf"config/{self.country}_admin_thresholds.json", "w") as file:
-            json.dump([record.__dict__ for record in data], file)
-
-    def __get_blob_service_client(self, blob_path: str):
-        """Get service client for Azure Blob Storage"""
+    def __get_blob_service_client(self):
         blob_service_client = BlobServiceClient.from_connection_string(
             f"DefaultEndpointsProtocol=https;"
             f'AccountName={self.secrets.get_secret("BLOB_ACCOUNT_NAME")};'
             f'AccountKey={self.secrets.get_secret("BLOB_ACCOUNT_KEY")};'
             f"EndpointSuffix=core.windows.net"
         )
+        return blob_service_client
+
+    def __get_blob_client(self, blob_path: str):
+        """Get service client for Azure Blob Storage"""
+        blob_service_client = self.__get_blob_service_client()
         container = self.settings.get_setting("blob_container")
         return blob_service_client.get_blob_client(container=container, blob=blob_path)
 
     def save_to_blob(self, local_path: str, blob_path: str):
         """Save file to Azure Blob Storage"""
         # upload to Azure Blob Storage
-        logger.info(f"Uploading {local_path} to Azure Blob Storage {blob_path}")
-        blob_client = self.__get_blob_service_client(blob_path)
+        blob_client = self.__get_blob_client(file_dir_blob)
         with open(local_path, "rb") as upload_file:
             blob_client.upload_blob(upload_file, overwrite=True)
 
     def get_from_blob(self, local_path: str, blob_path: str):
         """Get file from Azure Blob Storage"""
-        blob_client = self.__get_blob_service_client(blob_path)
+        blob_client = self.__get_blob_client(blob_path)
 
         with open(local_path, "wb") as download_file:
             try:
@@ -733,14 +823,84 @@ class Load:
                     f"File {blob_path} not found in Azure Blob Storage"
                 )
 
-    def send_to_blob_storage(self, file_name: str = "forecast"):
-        """Send forecast data to Azure Blob Storage"""
+    def __list_blobs_in_path(self, blob_path_prefix: str):
+        """List all blob files under a given path/prefix in the container."""
+        blob_service_client = self.__get_blob_service_client()
+        container = self.settings.get_setting("blob_container")
+        container_client = blob_service_client.get_container_client(container)
+        blob_list = container_client.list_blobs(name_starts_with=blob_path_prefix)
+        return [blob.name for blob in blob_list]
 
-        output_path = os.path.join("data", "output")
-        file_path = os.path.join("data", file_name)
-        archive_path = shutil.make_archive(file_path, "zip", output_path)
+    def __list_directories_in_path(self, blob_path_prefix: str):
+        """List unique directories under a given blob path/prefix."""
+        # Ensure prefix ends with / for consistent parsing
+        if not blob_path_prefix.endswith("/"):
+            blob_path_prefix = blob_path_prefix + "/"
+        
+        blob_names = self.__list_blobs_in_path(blob_path_prefix)
+        directories = set()
+        
+        for blob_name in blob_names:
+            if blob_name.startswith(blob_path_prefix):
+                relative_path = blob_name[len(blob_path_prefix):]
+                parts = relative_path.split("/")
+                if parts[0]:  # Get the first directory level
+                    directories.add(parts[0])
+        
+        return sorted(list(directories))
 
-        environment = self.secrets.get_secret("ENVIRONMENT")
-        blob_path = os.path.join(environment, f"{file_name}.zip")
+    def get_all_from_blob(self, local_dir: str, blob_base_path: str):
+        """Download all files from a blob path/prefix to a local directory."""
+        os.makedirs(local_dir, exist_ok=True)
+        blob_names = self.__fetch_flood_maps_blob_paths(blob_base_path)
 
-        self.save_to_blob(local_path=archive_path, blob_path=blob_path)
+        for blob_name in blob_names:
+            local_path = os.path.join(local_dir, blob_name.split("/")[-1])
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            self.get_from_blob(local_path, blob_name)
+
+    def __find_most_recent_dir(self, blob_path_prefix: str, datetime_format: str = "%Y%m%d0000"):
+        """Find the most recent date folder under a given blob path/prefix."""
+        directories = self.__list_directories_in_path(blob_path_prefix)
+        
+        # Filter for valid date folders (datetime_format)
+        date_folders = []
+        for dir_name in directories:
+            try:
+                datetime.strptime(dir_name, datetime_format)
+                date_folders.append(dir_name)
+            except ValueError:
+                pass  # Not a valid date folder, skip
+        
+        if not date_folders:
+            raise FileNotFoundError(
+                f"No date folders found in Azure Blob Storage with prefix {blob_path_prefix}"
+            )
+        
+        return sorted(date_folders)[-1]
+
+    def __fetch_flood_maps_blob_paths(self, blob_base_path: str):
+        """
+        Download flood map blobs file with prefix <today-datetime> in <today-datetime> directory.
+        If such combination is not available, download to the most recent date folder.
+        """
+        datetime_format = "%Y%m%d0000"  #202603200000
+        today = datetime.today().strftime(datetime_format)
+        fixed_part = "_SFINCS_"
+
+        blob_prefix = f"{today}{fixed_part}"
+        blob_path_prefix = f"{blob_base_path}/{today}/{blob_prefix}"
+        blob_names = self.__list_blobs_in_path(blob_path_prefix)
+
+        if len(blob_names) == 0:
+            # Find most recent date folder
+            most_recent_date = self.__find_most_recent_dir(blob_base_path, datetime_format)
+            logging.warning(
+                f"Flood map blobs for today {today} not found. "
+                f"Falling back to most recent date folder {most_recent_date}."
+            )
+            blob_prefix = f"{most_recent_date}{fixed_part}"
+            blob_path_prefix = f"{blob_base_path}/{most_recent_date}/{blob_prefix}"
+            blob_names = self.__list_blobs_in_path(blob_path_prefix)
+        
+        return blob_names
