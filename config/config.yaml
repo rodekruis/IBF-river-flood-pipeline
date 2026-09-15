@@ -3,7 +3,7 @@
 floods:
   global_flood_maps_url: https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/CEMS-GLOFAS/flood_hazard
   no_ensemble_members: 51  # number of ensemble members to consider
-  minimum_flood_depth: 0.1  # minimum flood depth in meters, to calculate affected population
+  minimum_flood_depth: 0.01  # minimum flood depth in meters, to calculate affected population
   glofas_threshold_url: https://confluence.ecmwf.int/display/CEMS/Auxiliary+Data
   glofas_threshold_files: flood_threshold_glofas_v4_rl
 
