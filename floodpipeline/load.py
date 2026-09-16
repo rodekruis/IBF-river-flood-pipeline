@@ -258,11 +258,25 @@ class Load:
         adapter = HTTPAdapter(max_retries=retry)
         session.mount("http://", adapter)
         session.mount("https://", adapter)
-        r = session.get(
-            self.secrets.get_secret("IBF_API_URL") + path,
-            headers=headers,
-            params=parameters,
-        )
+        r = None
+        attempts = 4
+        for attempt in range(attempts):
+            try:
+                r = session.get(
+                    self.secrets.get_secret("IBF_API_URL") + path,
+                    headers=headers,
+                    params=parameters,
+                )
+                break
+            except (requests.exceptions.ChunkedEncodingError,
+                    requests.exceptions.ConnectionError) as e:
+                if attempt == attempts - 1:
+                    raise
+                logging.warning(
+                    f"IBF API GET {path} failed ({e}), retrying "
+                    f"({attempt + 1}/{attempts - 1})"
+                )
+                time.sleep(2 ** attempt)
         if r.status_code >= 400:
             raise ValueError(f"Error in IBF API GET request: {r.status_code}, {r.text}")
         return r.json()
