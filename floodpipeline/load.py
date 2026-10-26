@@ -366,6 +366,14 @@ class Load:
                     station_code, lead_time_event
                 )
                 threshold_station = threshold_station_data.get_data_unit(station_code)
+                forecast_severity = alert_class_to_severity(
+                    alert_class=forecast_station.alert_class,
+                    triggered=(True if event_type == "trigger" else False),
+                )
+                # Currently (with high-warning not facilitated yet): set forecast_trigger to 1 exactly for those case where forecast_severity is 1
+                forecast_trigger = (
+                    1 if event_type == "trigger" and forecast_severity == 1.0 else 0
+                )
 
                 # send exposure data: admin-area-dynamic-data/exposure
                 indicators = [
@@ -387,24 +395,9 @@ class Load:
                             elif indicator == "population_affected_percentage":
                                 amount = forecast_admin.pop_affected_perc
                             elif indicator == "forecast_severity":
-                                amount = alert_class_to_severity(
-                                    alert_class=forecast_admin.alert_class,
-                                    triggered=(
-                                        True if event_type == "trigger" else False
-                                    ),
-                                )
+                                amount = forecast_severity
                             elif indicator == "forecast_trigger":
-                                forecast_severity = alert_class_to_severity(
-                                    alert_class=forecast_admin.alert_class,
-                                    triggered=(
-                                        True if event_type == "trigger" else False
-                                    ),
-                                )
-                                # Currently (with high-warning not facilitated yet): set forecast_trigger to 1 exactly for those case where forecast_severity is 1
-                                if event_type == "trigger" and forecast_severity == 1.0:
-                                    amount = 1
-                                else:
-                                    amount = 0
+                                amount = forecast_trigger
                             exposure_pcodes.append(
                                 {"placeCode": pcode, "amount": amount}
                             )
